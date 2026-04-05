@@ -3,10 +3,8 @@ import ReactDOM from 'react-dom/client'
 import { inject } from '@vercel/analytics'
 import App from './App.jsx'
 
-// Initialise Vercel Analytics
 inject()
 
-// Antigravity storage shim
 if (!window.storage) {
   window.storage = null;
 }

@@ -51,10 +51,10 @@ function scorePhysical(e, allEntries) {
   // First meal before 2pm — 8 pts
   if (e.mealBefore2) pts += 8;
 
-  // Caffeine cutoff — 7 pts
-  const cc = e.caffeineCutoffHr ?? 14;
-  if (cc <= 14) pts += 7;
-  else if (cc <= 16) pts += 4;
+  // Caffeine cups — modest contribution to physical score
+  const cups = e.caffeineCups || 2;
+  if (cups <= 2) pts += 7;
+  else if (cups <= 4) pts += 4;
   else pts += 0;
 
   return Math.min(100, pts);
@@ -95,8 +95,8 @@ function scoreMental(e) {
   if (sh === "built") pts += 10;
   else if (sh === "progress") pts += 6;
 
-  // Chess — 10 pts
-  const chess = e.chessMins || 0;
+  // Hobby — 10 pts
+  const chess = e.hobbyMins || e.chessMins || 0;
   if (chess >= 30) pts += 10;
   else if (chess >= 15) pts += 6;
 
@@ -154,7 +154,7 @@ function scoreDrain(e, allEntries) {
   if (alc >= 3) drain += 10;
   else if (alc >= 1) drain += 5;
 
-  // Caffeine excess — max 5
+  // Caffeine excess — max 5 (scoring based on cups only now)
   const caff = e.caffeineCups || 2;
   if (caff >= 5) drain += 5;
   else if (caff >= 3) drain += 2;
@@ -165,7 +165,7 @@ function scoreDrain(e, allEntries) {
   drain = Math.min(drain, drain); // already bounded by individual caps
 
   // Hydration — max 3
-  if (!e.hydrated) drain += 3;
+  if (!e.hydrated) drain += 3; // <3L water
 
   // Time wasted — max 20
   const tw = e.timeWasted || 0;
@@ -218,15 +218,40 @@ function healthLabel(score) {
   return "Needs work";
 }
 
-/* ─── STORAGE HELPERS ───────────────────────────────────────────── */
+/* ─── STORAGE ───────────────────────────────────────────────────── */
+// Direct localStorage — works on PWA, browser, everywhere.
+// window.storage (Antigravity) is tried first; falls back to localStorage.
+const LS = {
+  get(key) {
+    try { return localStorage.getItem(key); } catch { return null; }
+  },
+  set(key, val) {
+    try { localStorage.setItem(key, val); return true; } catch { return false; }
+  },
+};
+
 async function storageGet(key) {
+  // Try Antigravity storage first (Claude artifact env)
   try {
-    const r = await window.storage?.get(key);
-    return r?.value ? JSON.parse(r.value) : null;
+    if (window.storage) {
+      const r = await window.storage.get(key);
+      if (r?.value) return JSON.parse(r.value);
+    }
+  } catch {}
+  // Fall back to localStorage (PWA on phone)
+  try {
+    const val = LS.get(key);
+    return val ? JSON.parse(val) : null;
   } catch { return null; }
 }
+
 async function storageSet(key, val) {
-  try { await window.storage?.set(key, JSON.stringify(val)); } catch {}
+  const str = JSON.stringify(val);
+  // Write to both so data is always in localStorage as the persistent source
+  LS.set(key, str);
+  try {
+    if (window.storage) await window.storage.set(key, str);
+  } catch {}
 }
 
 /* ─── FONTS ─────────────────────────────────────────────────────── */
@@ -247,8 +272,8 @@ const G = `
   --sans:'DM Sans',system-ui,sans-serif;
   --r:14px;--r2:10px;--r3:20px;
 }
-body{background:var(--bg);color:var(--ink);font-family:var(--sans);min-height:100vh;overflow-x:hidden}
-.app{max-width:430px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;position:relative}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);height:100vh;overflow:hidden}
+.app{max-width:430px;margin:0 auto;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 input,textarea,select{font-family:var(--sans);color:var(--ink);background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r2);outline:none}
 input:focus,textarea:focus,select:focus{border-color:var(--accent)}
 input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:2px;border:none;cursor:pointer}
@@ -263,9 +288,9 @@ button:active{transform:scale(.97)}
 .nav-btn svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
 
 /* SCREENS */
-.screen{display:none;flex:1;flex-direction:column;overflow:hidden}
+.screen{display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0}
 .screen.active{display:flex}
-.scroll{flex:1;overflow-y:auto;padding:0 0 16px}
+.scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 0 16px}
 .scroll::-webkit-scrollbar{display:none}
 
 /* CARDS */
@@ -367,6 +392,15 @@ button:active{transform:scale(.97)}
 .ob-input{width:100%;padding:12px 14px;font-size:15px;border-radius:var(--r)}
 .ob-btn{width:100%;padding:15px;background:var(--accent);color:#fff;border-radius:var(--r);font-size:16px;font-weight:500;margin-top:8px}
 
+/* RECOMMENDATIONS */
+.rec-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);padding:14px 16px;margin-bottom:10px}
+.rec-top{display:flex;align-items:flex-start;gap:10px;margin-bottom:8px}
+.rec-icon{font-size:16px;flex-shrink:0;margin-top:1px}
+.rec-cat{font-size:9px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;margin-bottom:2px}
+.rec-title{font-size:14px;font-weight:500;color:var(--ink);line-height:1.3}
+.rec-effort{font-size:10px;color:var(--muted);background:var(--bg3);border:0.5px solid var(--border2);border-radius:20px;padding:3px 8px;white-space:nowrap;flex-shrink:0;margin-top:2px}
+.rec-body{font-size:12px;color:var(--ink2);line-height:1.6;padding-left:26px}
+
 /* ANIMATIONS */
 @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 .fade-up{animation:fadeUp .35s ease forwards}
@@ -401,12 +435,13 @@ function Ring({ pct, color, size=70, stroke=5 }) {
 }
 
 /* ─── ONBOARDING ────────────────────────────────────────────────── */
-function Onboarding({ onDone }) {
-  const [name,setName]=useState("");
-  const [dob,setDob]=useState("");
-  const [weight,setWeight]=useState("");
-  const [height,setHeight]=useState("");
-  const [mbti,setMbti]=useState("");
+function Onboarding({ onDone, existing }) {
+  const [name,setName]=useState(existing?.name||"");
+  const [dob,setDob]=useState(existing?.dob||"");
+  const [weight,setWeight]=useState(existing?.weight||"");
+  const [height,setHeight]=useState(existing?.height||"");
+  const [mbti,setMbti]=useState(existing?.mbti||"");
+  const isEdit = !!existing?.name;
 
   const save = async () => {
     if (!name.trim()) return;
@@ -418,8 +453,8 @@ function Onboarding({ onDone }) {
 
   return (
     <div className="ob-wrap">
-      <div className="ob-title fade-up">Hey there.<br/>Let's set up<br/>your space.</div>
-      <div className="ob-sub fade-up" style={{animationDelay:".1s"}}>HealthIsh tracks your whole life — honestly. This takes 60 seconds.</div>
+      <div className="ob-title fade-up">{isEdit ? "Update your\nprofile." : "Hey there.\nLet's set up\nyour space."}</div>
+      <div className="ob-sub fade-up" style={{animationDelay:".1s"}}>{isEdit ? "Changes save immediately." : "HealthIsh tracks your whole life — honestly. This takes 60 seconds."}</div>
       <div className="ob-field fade-up" style={{animationDelay:".15s"}}>
         <div className="ob-label">Your name</div>
         <input className="ob-input" placeholder="Skand" value={name} onChange={e=>setName(e.target.value)}/>
@@ -439,12 +474,38 @@ function Onboarding({ onDone }) {
         </div>
       </div>
       <div className="ob-field fade-up" style={{animationDelay:".3s"}}>
-        <div className="ob-label">MBTI type (optional)</div>
-        <input className="ob-input" placeholder="INTJ" maxLength={4} value={mbti} onChange={e=>setMbti(e.target.value)}/>
+        <div className="ob-label" style={{display:"flex",alignItems:"center",gap:6}}>
+          MBTI type (recommended)
+          <span
+            title="MBTI is a personality framework that identifies 16 types based on how you think, feel, and make decisions. Knowing your type helps HealthIsh personalise insights to your wiring."
+            onClick={()=>window.open("https://www.16personalities.com/free-personality-test","_blank")}
+            style={{
+              width:16,height:16,borderRadius:"50%",
+              background:"var(--border2)",color:"var(--muted)",
+              fontSize:10,fontWeight:700,display:"inline-flex",
+              alignItems:"center",justifyContent:"center",cursor:"pointer",
+              flexShrink:0,border:"0.5px solid var(--border2)"
+            }}>i</span>
+        </div>
+        <input className="ob-input" placeholder="e.g. INTJ" maxLength={4} value={mbti} onChange={e=>setMbti(e.target.value)}/>
+        <div style={{fontSize:11,color:"var(--muted)",marginTop:5,lineHeight:1.5}}>
+          Not sure?{" "}
+          <span style={{color:"var(--accent)",cursor:"pointer",textDecoration:"underline"}}
+            onClick={()=>window.open("https://www.16personalities.com/free-personality-test","_blank")}>
+            Take the free test →
+          </span>{" "}takes 12 minutes.
+        </div>
       </div>
       <button className="ob-btn fade-up" style={{animationDelay:".35s"}} onClick={save}>
-        Let's go →
+        {isEdit ? "Save changes" : "Let's go →"}
       </button>
+      {isEdit && (
+        <button onClick={()=>onDone(existing)} style={{
+          width:"100%",marginTop:10,padding:"14px",background:"transparent",
+          color:"var(--muted)",border:"0.5px solid var(--border2)",
+          borderRadius:"var(--r)",fontSize:14,
+        }}>Cancel</button>
+      )}
     </div>
   );
 }
@@ -457,20 +518,20 @@ function CheckIn({ entries, onSave, goHome }) {
 
   // Physical
   const [workoutMins, setWorkoutMins] = useState(existing.workoutMins??0);
-  const [sleepHrs, setSleepHrs] = useState(existing.sleepHrs??7);
-  const [bedtimeHr, setBedtimeHr] = useState(existing.bedtimeHr??23);
+  const [sleepBucket, setSleepBucket] = useState(existing.sleepBucket??"7-8");
+  const [bedtime, setBedtime] = useState(existing.bedtime??"23:00");
   const [energy, setEnergy] = useState(existing.energy??3);
   const [sunlight, setSunlight] = useState(existing.sunlight??null);
   const [mealBefore2, setMealBefore2] = useState(existing.mealBefore2??null);
-  const [caffeineCutoffHr, setCaffeineCutoffHr] = useState(existing.caffeineCutoffHr??14);
   const [caffeineCups, setCaffeineCups] = useState(existing.caffeineCups??2);
 
   // Mental
-  const [upskillHrs, setUpskillHrs] = useState(existing.upskillHrs??0);
+  const [upskillTime, setUpskillTime] = useState(existing.upskillTime??"00:00");
   const [clarity, setClarity] = useState(existing.clarity??3);
-  const [screenTimeHrs, setScreenTimeHrs] = useState(existing.screenTimeHrs??3);
+  const [screenTime, setScreenTime] = useState(existing.screenTime??"00:00");
   const [sideHustle, setSideHustle] = useState(existing.sideHustle??"none");
-  const [chessMins, setChessMins] = useState(existing.chessMins??0);
+  const [hobbyTime, setHobbyTime] = useState(existing.hobbyTime??existing.chessTime??"0");
+  const [pagesRead, setPagesRead] = useState(existing.pagesRead??0);
 
   // Emotional
   const [meditationMins, setMeditationMins] = useState(existing.meditationMins??0);
@@ -490,19 +551,39 @@ function CheckIn({ entries, onSave, goHome }) {
   const [timeWasted, setTimeWasted] = useState(existing.timeWasted??0);
   const [rumination, setRumination] = useState(existing.rumination??1);
   const [negativeSelfTalk, setNegativeSelfTalk] = useState(existing.negativeSelfTalk??false);
-  const [socialMins, setSocialMins] = useState(existing.socialMins??20);
+  const [socialMediaTime, setSocialMediaTime] = useState(existing.socialMediaTime??"00:00");
   const [masturbation, setMasturbation] = useState(existing.masturbation??false);
   const [lateNightPhone, setLateNightPhone] = useState(existing.lateNightPhone??false);
   const [reactivity, setReactivity] = useState(existing.reactivity??false);
 
+  // Derive numeric values from time/bucket strings for scoring
+  const timeToMins = t => {
+    if (!t || t==="0") return 0;
+    const parts = String(t).split(":").map(Number);
+    return parts.length===2 ? parts[0]*60+parts[1] : parts[0]*60;
+  };
+  const timeToHrs = t => timeToMins(t)/60;
+  const sleepBucketToHrs = b => ({ "under-5":4, "5-6":5.5, "6-7":6.5, "7-8":7.5, "8-9":8.5, "9+":9.5 }[b]??7.5);
+  const bedtimeToHr = t => { const [h] = (t||"23:00").split(":").map(Number); return h >= 20 ? h : h+24; };
+
   const handleSave = async () => {
     const entry = {
       date: today, submitted: true,
-      workoutMins, sleepHrs, bedtimeHr, energy, sunlight, mealBefore2,
-      caffeineCutoffHr, caffeineCups, upskillHrs, clarity, screenTimeHrs,
-      sideHustle, chessMins, meditationMins, mood, familyContact, contactQuality,
-      meaning, enjoyable, gratitude, cigarettes, alcohol, sugarDay, junkDinner,
-      hydrated, timeWasted, rumination, negativeSelfTalk, socialMins,
+      workoutMins,
+      sleepBucket, sleepHrs: sleepBucketToHrs(sleepBucket),
+      bedtime, bedtimeHr: bedtimeToHr(bedtime),
+      energy, sunlight, mealBefore2, caffeineCups,
+      upskillTime, upskillHrs: timeToHrs(upskillTime),
+      clarity,
+      screenTime, screenTimeHrs: timeToHrs(screenTime),
+      sideHustle,
+      hobbyTime, hobbyMins: timeToMins(hobbyTime),
+      pagesRead,
+      meditationMins, mood, familyContact, contactQuality,
+      meaning, enjoyable, gratitude,
+      cigarettes, alcohol, sugarDay, junkDinner, hydrated,
+      timeWasted, rumination, negativeSelfTalk,
+      socialMediaTime, socialMins: timeToMins(socialMediaTime),
       masturbation, lateNightPhone, reactivity,
     };
     await onSave(entry);
@@ -510,22 +591,160 @@ function CheckIn({ entries, onSave, goHome }) {
     goHome();
   };
 
-  function Slider({label, min, max, step=1, val, setVal, leftLabel, rightLabel, unit=""}) {
+  // ── UI components ──────────────────────────────────────────────
+
+  // 5-point tap selector (replaces sliders for subjective 1-5 fields)
+  function ScalePicker({label, val, setVal, low, high}) {
     return (
       <div className="ci-row">
-        <div className="ci-q">
-          <span>{label}</span>
-          <span className="ci-val">{val}{unit}</span>
+        <div className="ci-q" style={{marginBottom:10}}><span>{label}</span></div>
+        <div style={{display:"flex",gap:6}}>
+          {[1,2,3,4,5].map(n=>(
+            <div key={n} onClick={()=>setVal(n)} style={{
+              flex:1, padding:"10px 0", borderRadius:"var(--r2)", textAlign:"center",
+              fontSize:13, fontWeight:500, cursor:"pointer", transition:"all .15s",
+              background: val===n ? "var(--accent)" : "var(--bg3)",
+              color: val===n ? "#fff" : "var(--muted)",
+              border: `0.5px solid ${val===n ? "var(--accent)" : "var(--border2)"}`,
+            }}>{n}</div>
+          ))}
         </div>
-        <input type="range" min={min} max={max} step={step} value={val}
-          style={{background:`linear-gradient(90deg,var(--accent) ${((val-min)/(max-min))*100}%,var(--bg3) 0%)`}}
-          onChange={e=>setVal(Number(e.target.value))}/>
-        {(leftLabel||rightLabel) && (
-          <div className="ci-ends">
-            <span className="ci-end">{leftLabel}</span>
-            <span className="ci-end">{rightLabel}</span>
+        <div className="ci-ends" style={{marginTop:5}}>
+          <span className="ci-end">{low}</span>
+          <span className="ci-end">{high}</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Sleep bucket selector
+  function SleepBucket({val, setVal}) {
+    const buckets = [
+      {id:"under-5", label:"< 5h"},
+      {id:"5-6",     label:"5–6h"},
+      {id:"6-7",     label:"6–7h"},
+      {id:"7-8",     label:"7–8h"},
+      {id:"8-9",     label:"8–9h"},
+      {id:"9+",      label:"9h+"},
+    ];
+    return (
+      <div className="ci-row">
+        <div className="ci-q" style={{marginBottom:10}}><span>Sleep last night</span></div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
+          {buckets.map(b=>(
+            <div key={b.id} onClick={()=>setVal(b.id)} style={{
+              padding:"10px 4px", borderRadius:"var(--r2)", textAlign:"center",
+              fontSize:13, fontWeight:500, cursor:"pointer", transition:"all .15s",
+              background: val===b.id ? "var(--teal)" : "var(--bg3)",
+              color: val===b.id ? "#fff" : "var(--muted)",
+              border: `0.5px solid ${val===b.id ? "var(--teal)" : "var(--border2)"}`,
+            }}>{b.label}</div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Workout bucket selector
+  function WorkoutBucket({val, setVal}) {
+    const buckets = [
+      {mins:0,   label:"Rest day"},
+      {mins:30,  label:"30 min"},
+      {mins:45,  label:"45 min"},
+      {mins:60,  label:"1 hour"},
+      {mins:75,  label:"75 min"},
+      {mins:90,  label:"90 min+"},
+    ];
+    return (
+      <div className="ci-row">
+        <div className="ci-q" style={{marginBottom:10}}><span>Workout today</span></div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
+          {buckets.map(b=>(
+            <div key={b.mins} onClick={()=>setVal(b.mins)} style={{
+              padding:"10px 4px", borderRadius:"var(--r2)", textAlign:"center",
+              fontSize:12, fontWeight:500, cursor:"pointer", transition:"all .15s",
+              background: val===b.mins ? "var(--teal)" : "var(--bg3)",
+              color: val===b.mins ? "#fff" : "var(--muted)",
+              border: `0.5px solid ${val===b.mins ? "var(--teal)" : "var(--border2)"}`,
+            }}>{b.label}</div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Time picker field (HH:MM native input)
+  function TimePicker({label, val, setVal, hint}) {
+    return (
+      <div className="ci-row">
+        <div className="ci-q" style={{marginBottom:8}}>
+          <span>{label}</span>
+          {hint && <span style={{fontSize:10,color:"var(--muted)"}}>{hint}</span>}
+        </div>
+        <input type="time" value={val} onChange={e=>setVal(e.target.value)}
+          style={{width:"100%",padding:"11px 14px",fontSize:16,borderRadius:"var(--r2)",
+            background:"var(--bg3)",border:"0.5px solid var(--border2)",color:"var(--ink)"}}/>
+      </div>
+    );
+  }
+
+  // Bucket picker with label, target hint, and accent color
+  function BucketPicker({label, target, val, setVal, buckets, color}) {
+    return (
+      <div className="ci-row">
+        <div className="ci-q" style={{marginBottom:6, flexDirection:"column", alignItems:"flex-start", gap:2}}>
+          <span>{label}</span>
+          <span style={{fontSize:10, color:"var(--teal)", fontWeight:500}}>{target}</span>
+        </div>
+        <div style={{display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:6}}>
+          {buckets.map(b=>(
+            <div key={b.v} onClick={()=>setVal(b.v)} style={{
+              padding:"10px 4px", borderRadius:"var(--r2)", textAlign:"center",
+              fontSize:12, fontWeight:500, cursor:"pointer", transition:"all .15s",
+              background: val===b.v ? color : "var(--bg3)",
+              color: val===b.v ? "#fff" : "var(--muted)",
+              border: `0.5px solid ${val===b.v ? color : "var(--border2)"}`,
+            }}>{b.l}</div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Duration picker — HH:MM for durations (upskill, screen time, social)
+  function DurationPicker({label, val, setVal, hint}) {
+    return (
+      <div className="ci-row">
+        <div className="ci-q" style={{marginBottom:8}}>
+          <span>{label}</span>
+          {hint && <span style={{fontSize:10,color:"var(--muted)"}}>{hint}</span>}
+        </div>
+        <input type="time" value={val} onChange={e=>setVal(e.target.value)}
+          style={{width:"100%",padding:"11px 14px",fontSize:16,borderRadius:"var(--r2)",
+            background:"var(--bg3)",border:"0.5px solid var(--border2)",color:"var(--ink)"}}/>
+        <div style={{fontSize:10,color:"var(--muted)",marginTop:4}}>Enter as hours:minutes — e.g. 02:30 = 2.5 hours</div>
+      </div>
+    );
+  }
+
+  // Stepper for small counts (cigarettes, alcohol, caffeine)
+  function Stepper({label, val, setVal, min=0, max=20, unit=""}) {
+    return (
+      <div className="ci-row">
+        <div className="ci-q" style={{marginBottom:8}}><span>{label}</span></div>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <button onClick={()=>setVal(Math.max(min,val-1))} style={{
+            width:40,height:40,borderRadius:"50%",background:"var(--bg3)",
+            border:"0.5px solid var(--border2)",color:"var(--ink)",fontSize:20,lineHeight:1
+          }}>−</button>
+          <div style={{flex:1,textAlign:"center",fontFamily:"var(--serif)",fontSize:28,color:"var(--accent)"}}>
+            {val}{unit}
           </div>
-        )}
+          <button onClick={()=>setVal(Math.min(max,val+1))} style={{
+            width:40,height:40,borderRadius:"50%",background:"var(--bg3)",
+            border:"0.5px solid var(--border2)",color:"var(--ink)",fontSize:20,lineHeight:1
+          }}>+</button>
+        </div>
       </div>
     );
   }
@@ -562,11 +781,10 @@ function CheckIn({ entries, onSave, goHome }) {
       <div className="section">
         <div className="section-title">Physical</div>
         <div className="ci-block">
-          <Slider label="Workout today" min={0} max={120} val={workoutMins} setVal={setWorkoutMins} leftLabel="Rest day" rightLabel="2 hours" unit=" min"/>
-          <Slider label="Sleep last night" min={3} max={12} step={0.5} val={sleepHrs} setVal={setSleepHrs} leftLabel="Depleted" rightLabel="Fully restored" unit=" hrs"/>
-          <Slider label="Bedtime (yesterday)" min={20} max={26} step={0.5} val={bedtimeHr} setVal={setBedtimeHr}
-            leftLabel="8pm" rightLabel="2am" unit={`:${((bedtimeHr%1)*60||"00").toString().padStart(2,"0")}`}/>
-          <Slider label="Physical energy" min={1} max={5} val={energy} setVal={setEnergy} leftLabel="Running on fumes" rightLabel="Fully charged"/>
+          <WorkoutBucket val={workoutMins} setVal={setWorkoutMins}/>
+          <SleepBucket val={sleepBucket} setVal={setSleepBucket}/>
+          <TimePicker label="Bedtime last night" val={bedtime} setVal={setBedtime} hint="when you got into bed"/>
+          <ScalePicker label="Physical energy" val={energy} setVal={setEnergy} low="Running on fumes" high="Fully charged"/>
           <div className="ci-row">
             <div className="ci-q"><span>Morning sunlight (before 10am)</span></div>
             <YesNo val={sunlight} setVal={setSunlight}/>
@@ -575,9 +793,7 @@ function CheckIn({ entries, onSave, goHome }) {
             <div className="ci-q"><span>First real meal before 2pm</span></div>
             <YesNo val={mealBefore2} setVal={setMealBefore2}/>
           </div>
-          <Slider label="Caffeine cutoff" min={10} max={24} step={0.5} val={caffeineCutoffHr} setVal={setCaffeineCutoffHr}
-            leftLabel="10am" rightLabel="Midnight" unit={`:00`}/>
-          <Slider label="Caffeine cups total" min={0} max={8} val={caffeineCups} setVal={setCaffeineCups} leftLabel="None" rightLabel="8+ cups" unit=" cups"/>
+          <Stepper label="Caffeine intake" val={caffeineCups} setVal={setCaffeineCups} max={10} unit=" cups"/>
         </div>
       </div>
 
@@ -585,10 +801,69 @@ function CheckIn({ entries, onSave, goHome }) {
       <div className="section" style={{marginTop:16}}>
         <div className="section-title">Mental</div>
         <div className="ci-block">
-          <Slider label="Upskilling time (PM / AI)" min={0} max={8} step={0.5} val={upskillHrs} setVal={setUpskillHrs} leftLabel="None" rightLabel="8 hrs" unit=" hrs"/>
-          <Slider label="Mental clarity" min={1} max={5} val={clarity} setVal={setClarity} leftLabel="Noise everywhere" rightLabel="Laser clarity"/>
-          <Slider label="Screen time (recreational)" min={0} max={10} step={0.5} val={screenTimeHrs} setVal={setScreenTimeHrs} leftLabel="None" rightLabel="10+ hrs" unit=" hrs"/>
-          <Slider label="Chess today" min={0} max={60} step={5} val={chessMins} setVal={setChessMins} leftLabel="Skipped" rightLabel="1 hour" unit=" min"/>
+          <BucketPicker
+            label="Upskill time"
+            target="Weekdays: 2 hrs · Weekends: 6 hrs"
+            val={upskillTime}
+            setVal={setUpskillTime}
+            buckets={[
+              {v:"0",l:"None"},
+              {v:"0:30",l:"30 min"},
+              {v:"1:00",l:"1 hr"},
+              {v:"2:00",l:"2 hrs"},
+              {v:"4:00",l:"4 hrs"},
+              {v:"6:00",l:"6 hrs+"},
+            ]}
+            color="var(--purple)"
+          />
+          <ScalePicker label="Mental clarity" val={clarity} setVal={setClarity} low="Noise everywhere" high="Laser clarity"/>
+          <BucketPicker
+            label="Screen time"
+            target="Target: under 2 hrs recreational"
+            val={screenTime}
+            setVal={setScreenTime}
+            buckets={[
+              {v:"0",l:"None"},
+              {v:"0:30",l:"30 min"},
+              {v:"1:00",l:"1 hr"},
+              {v:"2:00",l:"2 hrs"},
+              {v:"3:00",l:"3 hrs"},
+              {v:"5:00",l:"5 hrs+"},
+            ]}
+            color="var(--accent)"
+          />
+          <BucketPicker
+            label="Hobby time"
+            target="Target: 30 min daily · Your anchor activity"
+            val={hobbyTime}
+            setVal={setHobbyTime}
+            buckets={[
+              {v:"0",l:"Skipped"},
+              {v:"0:15",l:"15 min"},
+              {v:"0:30",l:"30 min"},
+              {v:"0:45",l:"45 min"},
+              {v:"1:00",l:"1 hr"},
+              {v:"1:30",l:"1.5 hrs+"},
+            ]}
+            color="var(--teal)"
+          />
+          <div className="ci-row">
+            <div className="ci-q" style={{marginBottom:6,flexDirection:"column",alignItems:"flex-start",gap:2}}>
+              <span>Pages read</span>
+              <span style={{fontSize:10,color:"var(--teal)",fontWeight:500}}>Target: 10 pages a day minimum</span>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+              {[{v:0,l:"None"},{v:5,l:"5 pgs"},{v:10,l:"10 pgs"},{v:20,l:"20 pgs"},{v:30,l:"30 pgs"},{v:50,l:"50 pgs"},{v:75,l:"75 pgs"},{v:100,l:"100+"}].map(b=>(
+                <div key={b.v} onClick={()=>setPagesRead(b.v)} style={{
+                  padding:"10px 4px",borderRadius:"var(--r2)",textAlign:"center",
+                  fontSize:11,fontWeight:500,cursor:"pointer",transition:"all .15s",
+                  background:pagesRead===b.v?"var(--purple)":"var(--bg3)",
+                  color:pagesRead===b.v?"#fff":"var(--muted)",
+                  border:`0.5px solid ${pagesRead===b.v?"var(--purple)":"var(--border2)"}`,
+                }}>{b.l}</div>
+              ))}
+            </div>
+          </div>
           <div className="ci-row">
             <div className="ci-q"><span>Side hustle progress today</span></div>
             <div className="ci-chips">
@@ -604,19 +879,32 @@ function CheckIn({ entries, onSave, goHome }) {
       <div className="section" style={{marginTop:16}}>
         <div className="section-title">Emotional</div>
         <div className="ci-block">
-          <Slider label="Meditation + mantra chanting" min={0} max={30} val={meditationMins} setVal={setMeditationMins} leftLabel="Skipped" rightLabel="30 min" unit=" min"/>
-          <Slider label="Overall mood" min={1} max={5} val={mood} setVal={setMood} leftLabel="Hollow" rightLabel="Fully invested"/>
           <div className="ci-row">
-            <div className="ci-q"><span>Spoke to mum or brother today</span></div>
+            <div className="ci-q" style={{marginBottom:10}}><span>Meditation + mantra chanting</span></div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+              {[{v:0,l:"None"},{v:5,l:"5 min"},{v:10,l:"10 min"},{v:20,l:"20 min+"}].map(b=>(
+                <div key={b.v} onClick={()=>setMeditationMins(b.v)} style={{
+                  padding:"10px 4px",borderRadius:"var(--r2)",textAlign:"center",
+                  fontSize:12,fontWeight:500,cursor:"pointer",transition:"all .15s",
+                  background:meditationMins===b.v?"var(--teal)":"var(--bg3)",
+                  color:meditationMins===b.v?"#fff":"var(--muted)",
+                  border:`0.5px solid ${meditationMins===b.v?"var(--teal)":"var(--border2)"}`,
+                }}>{b.l}</div>
+              ))}
+            </div>
+          </div>
+          <ScalePicker label="Overall mood" val={mood} setVal={setMood} low="Hollow" high="Fully invested"/>
+          <div className="ci-row">
+            <div className="ci-q" style={{marginBottom:10}}><span>Genuine conversation with a loved one?</span></div>
             <div className="ci-chips">
-              {[["both","Both"],["one","One of them"],["voicenote","Voice note"],["none","Neither"]].map(([v,l])=>(
+              {[["both","Multiple people"],["one","One person"],["voicenote","Voice / text"],["none","No one"]].map(([v,l])=>(
                 <div key={v} className={`chip ${familyContact===v?"selected":""}`} onClick={()=>setFamilyContact(v)}>{l}</div>
               ))}
             </div>
           </div>
           {familyContact && familyContact!=="none" && (
             <div className="ci-row">
-              <div className="ci-q"><span>Did the conversation feel real?</span></div>
+              <div className="ci-q"><span>Did it feel like a real conversation?</span></div>
               <YesNo val={contactQuality} setVal={setContactQuality}/>
             </div>
           )}
@@ -630,8 +918,9 @@ function CheckIn({ entries, onSave, goHome }) {
           </div>
           <div className="ci-row">
             <div className="ci-q"><span>One thing you're grateful for</span></div>
-            <textarea rows={2} style={{width:"100%",padding:"10px 12px",fontSize:13,resize:"none",marginTop:4,borderRadius:"var(--r2)"}}
-              placeholder="Be specific. Not 'health'. The chai this morning was perfect."
+            <textarea rows={2} style={{width:"100%",padding:"10px 12px",fontSize:13,resize:"none",marginTop:4,
+              borderRadius:"var(--r2)",background:"var(--bg3)",border:"0.5px solid var(--border2)",color:"var(--ink)"}}
+              placeholder="Be specific. Not 'my health'. The chai this morning was perfect."
               value={gratitude} onChange={e=>setGratitude(e.target.value)}/>
           </div>
         </div>
@@ -641,11 +930,38 @@ function CheckIn({ entries, onSave, goHome }) {
       <div className="section" style={{marginTop:16}}>
         <div className="section-title">Drains — honest signals</div>
         <div className="ci-block">
-          <Slider label="Cigarettes smoked" min={0} max={20} val={cigarettes} setVal={setCigarettes} leftLabel="None" rightLabel="20+" unit=""/>
-          <Slider label="Alcohol drinks" min={0} max={8} val={alcohol} setVal={setAlcohol} leftLabel="None" rightLabel="8+" unit=""/>
-          <Slider label="Social media / doomscrolling" min={0} max={180} step={10} val={socialMins} setVal={setSocialMins} leftLabel="None" rightLabel="3 hrs" unit=" min"/>
-          <Slider label="Time wasted (honest estimate)" min={0} max={5} step={0.5} val={timeWasted} setVal={setTimeWasted} leftLabel="None" rightLabel="5 hrs" unit=" hrs"/>
-          <Slider label="Rumination (circular thinking)" min={1} max={5} val={rumination} setVal={setRumination} leftLabel="Quiet mind" rightLabel="Consumed by thoughts"/>
+          <Stepper label="Cigarettes smoked" val={cigarettes} setVal={setCigarettes} max={30}/>
+          <Stepper label="Alcohol drinks" val={alcohol} setVal={setAlcohol} max={12}/>
+          <BucketPicker
+            label="Social media / doomscrolling"
+            target="Target: under 30 min"
+            val={socialMediaTime}
+            setVal={setSocialMediaTime}
+            buckets={[
+              {v:"0",    l:"None"},
+              {v:"0:15", l:"15 min"},
+              {v:"0:30", l:"30 min"},
+              {v:"1:00", l:"1 hr"},
+              {v:"2:00", l:"2 hrs"},
+              {v:"3:00", l:"3 hrs+"},
+            ]}
+            color="var(--accent)"
+          />
+          <div className="ci-row">
+            <div className="ci-q" style={{marginBottom:10}}><span>Time wasted today</span></div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+              {[{v:0,l:"None"},{v:0.5,l:"30 min"},{v:1,l:"1 hr"},{v:2,l:"2 hrs"},{v:3,l:"3 hrs"},{v:4,l:"4 hrs+"}].map(b=>(
+                <div key={b.v} onClick={()=>setTimeWasted(b.v)} style={{
+                  padding:"10px 4px",borderRadius:"var(--r2)",textAlign:"center",
+                  fontSize:12,fontWeight:500,cursor:"pointer",transition:"all .15s",
+                  background:timeWasted===b.v?"var(--accent)":"var(--bg3)",
+                  color:timeWasted===b.v?"#fff":"var(--muted)",
+                  border:`0.5px solid ${timeWasted===b.v?"var(--accent)":"var(--border2)"}`,
+                }}>{b.l}</div>
+              ))}
+            </div>
+          </div>
+          <ScalePicker label="Rumination (circular thinking)" val={rumination} setVal={setRumination} low="Quiet mind" high="Consumed"/>
           <div className="ci-row">
             <div className="ci-q"><span>High-sugar day?</span></div>
             <YesNo val={sugarDay} setVal={setSugarDay}/>
@@ -655,7 +971,7 @@ function CheckIn({ entries, onSave, goHome }) {
             <YesNo val={junkDinner} setVal={setJunkDinner}/>
           </div>
           <div className="ci-row">
-            <div className="ci-q"><span>Drank 2+ litres of water?</span></div>
+            <div className="ci-q"><span>Drank 3+ litres of water?</span></div>
             <YesNo val={hydrated} setVal={setHydrated}/>
           </div>
           <div className="ci-row">
@@ -683,6 +999,125 @@ function CheckIn({ entries, onSave, goHome }) {
       </button>
     </div>
   );
+}
+
+/* ─── RECOMMENDATIONS ENGINE ────────────────────────────────────── */
+function getRecommendations(todayEntry, allEntries, pScore, mScore, eScore, dScore) {
+  if (!todayEntry) return [];
+  const recs = [];
+  const streak = (fn) => {
+    let s = 0;
+    for (let i = allEntries.length - 1; i >= 0; i--) {
+      if (fn(allEntries[i])) s++; else break;
+    }
+    return s;
+  };
+
+  // Mental noise / anxiety
+  if ((todayEntry.rumination||1) >= 4) recs.push({
+    priority:1, color:"#7f77dd", icon:"◈", category:"anxiety",
+    title:"Box breathing — right now",
+    body:"4 counts in, hold 4, out 4, hold 4. Repeat 4 times. Rumination runs on shallow breathing. Interrupt the loop physically.",
+    effort:"2 min"
+  });
+  if ((todayEntry.rumination||1) >= 3 && !todayEntry.meditationMins) recs.push({
+    priority:2, color:"#7f77dd", icon:"◈", category:"mental noise",
+    title:"10 min mantra before sleep",
+    body:"You skipped meditation and the mind is running. Even 10 minutes of mantra chanting before bed resets the nervous system and breaks the thought loop.",
+    effort:"10 min"
+  });
+  if (mScore < 40 && (todayEntry.screenTimeHrs||0) > 3) recs.push({
+    priority:1, color:"#c8553d", icon:"◉", category:"mental clarity",
+    title:"Phone in another room for 1 hour",
+    body:"Your screen time is high and clarity is low. These two move together. Put the phone physically in another room — not on silent, in another room.",
+    effort:"1 hour"
+  });
+  if (todayEntry.negativeSelfTalk) recs.push({
+    priority:2, color:"#c8553d", icon:"◉", category:"self-talk",
+    title:"Name it, then drop it",
+    body:"You had a negative self-talk episode. Write down the exact thought — one sentence. Then ask: would I say this to someone I respect? That question usually ends the loop.",
+    effort:"5 min"
+  });
+
+  // Physical
+  if ((todayEntry.sleepHrs||7) < 6) recs.push({
+    priority:1, color:"#1d9e75", icon:"◆", category:"sleep",
+    title:"Hard stop at 10pm tonight",
+    body:"You slept under 6 hours. Sleep debt compounds — one more short night and every score tanks. Set an alarm for 10pm as a wind-down trigger.",
+    effort:"Tonight"
+  });
+  if (!todayEntry.sunlight && pScore < 60) recs.push({
+    priority:3, color:"#1d9e75", icon:"◆", category:"energy",
+    title:"10 minutes outside before 10am tomorrow",
+    body:"No morning sunlight today. Morning light sets your cortisol rhythm for the whole day. Even overcast sky counts. Cheapest energy upgrade available.",
+    effort:"10 min tomorrow"
+  });
+  if ((todayEntry.caffeineCups||0) >= 4) recs.push({
+    priority:2, color:"#1d9e75", icon:"◆", category:"energy",
+    title:"Cut caffeine now if past 2pm",
+    body:`${todayEntry.caffeineCups} cups today. Caffeine's half-life is 5–6 hours — anything after 2pm disrupts your sleep architecture tonight.`,
+    effort:"Immediate"
+  });
+  const noWorkoutStreak = streak(e => !e.workoutMins || e.workoutMins < 30);
+  if (noWorkoutStreak >= 3) recs.push({
+    priority:2, color:"#1d9e75", icon:"◆", category:"movement",
+    title:"20-minute walk — no phone",
+    body:`${noWorkoutStreak} days without movement. You don't need a full session. A 20-minute walk resets cortisol, clears mental noise, and breaks the sedentary pattern.`,
+    effort:"20 min"
+  });
+
+  // Emotional / isolation
+  const noContactStreak = streak(e => !e.familyContact || e.familyContact==="none");
+  if (noContactStreak >= 2) recs.push({
+    priority:1, color:"#c4840a", icon:"◇", category:"isolation",
+    title:"Have a real conversation with someone you love",
+    body:`${noContactStreak} days without genuine connection. Isolation compounds silently. Reach out to someone who matters to you — even 5 minutes resets the pattern.`,
+    effort:"5 min"
+  });
+  if (eScore < 50 && !todayEntry.enjoyable) recs.push({
+    priority:3, color:"#c4840a", icon:"◇", category:"emotional reset",
+    title:"Do one thing that's just for you",
+    body:"Emotional score is low, nothing enjoyable today. Not productive. Not useful. Just something you like — your hobby, music, a walk, a film. Even 20 minutes.",
+    effort:"20 min"
+  });
+  if (!todayEntry.meaning) recs.push({
+    priority:3, color:"#c4840a", icon:"◇", category:"meaning",
+    title:"Write one sentence about why this matters",
+    body:"Today didn't feel meaningful. Before you sleep, finish this: 'I'm building this life because...' The act of writing reconnects you to the reason.",
+    effort:"2 min"
+  });
+
+  // Drains
+  if ((todayEntry.cigarettes||0) >= 4) recs.push({
+    priority:2, color:"#c8553d", icon:"▽", category:"body drain",
+    title:"Delay the next cigarette by 30 minutes",
+    body:"Not asking you to quit. Just delay. Every 30-minute delay reduces the neurological urgency signal. This is how frequency drops over time.",
+    effort:"Ongoing"
+  });
+  if (dScore >= 41) recs.push({
+    priority:1, color:"#c8553d", icon:"▽", category:"drain",
+    title:"Identify your biggest drain today",
+    body:"Drain score is heavy. Pick the single highest-cost drain from today — if you removed one, which would change the most? Name it. That's tomorrow's focus.",
+    effort:"3 min"
+  });
+
+  // Direction
+  const dow = new Date().getDay();
+  const isWeekday = dow >= 1 && dow <= 5;
+  if ((todayEntry.upskillHrs||0) < 1 && isWeekday) recs.push({
+    priority:2, color:"#7f77dd", icon:"◈", category:"direction",
+    title:"45 minutes of upskilling before bed",
+    body:"You haven't hit your upskilling target. Even 45 focused minutes — a PM case study, a build session, a framework — keeps the compounding going. Don't break the chain.",
+    effort:"45 min"
+  });
+  if (todayEntry.sideHustle==="none" && (todayEntry.upskillHrs||0) < 1) recs.push({
+    priority:3, color:"#7f77dd", icon:"◈", category:"direction",
+    title:"Name one thing to build tomorrow",
+    body:"No upskilling and no side hustle progress today. Before you sleep, write one specific thing you will build or finish tomorrow. Specificity is commitment.",
+    effort:"2 min"
+  });
+
+  return recs.sort((a,b)=>a.priority-b.priority).slice(0,4);
 }
 
 /* ─── DASHBOARD ─────────────────────────────────────────────────── */
@@ -717,13 +1152,15 @@ function Dashboard({ entries, profile, setTab }) {
     if (mScore < 50) signals.push({color:"#c8553d", text:`Mental score is ${mScore}%. Screen time or upskilling gap is the likely cause.`});
     if (!todayEntry.familyContact || todayEntry.familyContact==="none") {
       const streak = recentEntries.filter(e=>!e.familyContact||e.familyContact==="none").length;
-      if (streak>=3) signals.push({color:"#c8553d", text:`${streak} days without speaking to family. Isolation pattern building.`});
+      if (streak>=3) signals.push({color:"#c8553d", text:`${streak} days without a genuine conversation with someone you love. Isolation pattern building.`});
     }
     if (pScore >= 80) signals.push({color:"#3d8c6c", text:`Strong physical day. Body is doing its job.`});
     if (eScore >= 80) signals.push({color:"#3d8c6c", text:`Emotional baseline is solid at ${eScore}%.`});
     if ((todayEntry.upskillHrs||0) >= 2) signals.push({color:"#3d8c6c", text:`Upskilling target hit. Forward motion is real.`});
   }
   if (!signals.length && !todayEntry) signals.push({color:"#7a7268", text:"No check-in yet today. Tap the + tab to log your day."});
+
+  const recs = getRecommendations(todayEntry, recentEntries, pScore, mScore, eScore, dScore);
 
   const firstName = (profile?.name||"there").split(" ")[0];
   const initials = getInitials(profile?.name||"S");
@@ -830,6 +1267,26 @@ function Dashboard({ entries, profile, setTab }) {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* RECOMMENDATIONS */}
+      {recs.length > 0 && (
+        <div className="section" style={{marginTop:20}}>
+          <div className="section-title fade-up" style={{animationDelay:".22s"}}>What to do now</div>
+          {recs.map((r,i)=>(
+            <div key={i} className="rec-card fade-up" style={{animationDelay:`${.24+i*.04}s`}}>
+              <div className="rec-top">
+                <div className="rec-icon" style={{color:r.color}}>{r.icon}</div>
+                <div style={{flex:1}}>
+                  <div className="rec-cat" style={{color:r.color}}>{r.category}</div>
+                  <div className="rec-title">{r.title}</div>
+                </div>
+                <div className="rec-effort">{r.effort}</div>
+              </div>
+              <div className="rec-body">{r.body}</div>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -987,6 +1444,252 @@ function Profile({ profile, entries, onEdit }) {
   );
 }
 
+/* ─── KNOW YOURSELF ENGINE ──────────────────────────────────────── */
+const MBTI_PROFILES = {
+  INTJ:{ archetype:"The Strategist", strengths:["Systems thinking","Long-range focus","Self-discipline","Independent under pressure"], weaknesses:["Dismisses emotional needs","Isolation spiral","Overworks until collapse","Difficulty asking for help"], opportunity:"Your upskilling compounds faster than almost any type — point the relentlessness at one thing.", threat:"You will rationalise isolation as productivity. Watch the family contact signal closely." },
+  INTP:{ archetype:"The Analyst", strengths:["Deep problem-solving","Abstract thinking","Calm in complexity","Intellectual curiosity"], weaknesses:["Analysis paralysis","Avoids commitment","Undervalues routine","Loses track of basics (sleep, food)"], opportunity:"Your chess habit is building pattern recognition that transfers to PM thinking. Protect it.", threat:"When bored, you generate ideas instead of shipping. Side hustle score is your honesty check." },
+  INFJ:{ archetype:"The Visionary", strengths:["Long-term vision","Deep empathy","Meaning-driven","Persistent on what matters"], weaknesses:["Absorbs others' stress","Avoids conflict","Meaning-loss hits hard","Burnout from idealism"], opportunity:"Your sense of meaning is a lever — when it's high, everything else follows. Track what generates it.", threat:"Rumination is your default stress response. High rumination + low meaning = danger zone." },
+  INFP:{ archetype:"The Idealist", strengths:["Creative depth","Authentic drive","Empathic insight","Values clarity"], weaknesses:["Overwhelmed by criticism","Avoids structure","Procrastination under shame","Emotional flooding"], opportunity:"Gratitude practice lands deeper for you than most types. One honest sentence changes your state.", threat:"Negative self-talk is your primary internal threat. Every episode reinforces avoidance." },
+  ENTJ:{ archetype:"The Commander", strengths:["High drive","Strategic execution","Natural leadership","Thrives under pressure"], weaknesses:["Low emotional awareness","Overcommits","Dismisses recovery","Impatience"], opportunity:"Your energy is an asset when directed. Single Vector Commit matters more for you than any other type.", threat:"You will outrun your recovery. Drain score is your canary. When it's heavy, slow down before you have to." },
+  ENTP:{ archetype:"The Debater", strengths:["Fast pattern recognition","Adaptable","Creative problem-solving","High energy"], weaknesses:["Starts more than finishes","Boredom triggers drains","Avoids routine","Low follow-through"], opportunity:"Side hustle tracking is your most important metric — it's the honesty check on whether ideas become things.", threat:"Screen time and doomscrolling spike when you're understimulated. Watch the correlation." },
+  ENFJ:{ archetype:"The Protagonist", strengths:["People energise you","Motivated by growth","High empathy","Natural communicator"], weaknesses:["Neglects self while helping others","Needs social fuel","Approval-seeking"], opportunity:"Family contact is not just emotional health for you — it's your energy source. Miss it and everything drops.", threat:"When isolated, you perform fine for a while then crash hard. The lag makes it invisible until it's not." },
+  ENFP:{ archetype:"The Campaigner", strengths:["High enthusiasm","Sees potential everywhere","Creative","Makes connections others miss"], weaknesses:["Distracted by new ideas","Avoids difficult follow-through","Emotional volatility"], opportunity:"Your meaning score predicts everything else. A day with meaning generates outsized output.", threat:"Time wasted is your stealth drain — it doesn't feel bad in the moment. Watch the pattern." },
+  ISTJ:{ archetype:"The Inspector", strengths:["High reliability","Structured execution","Consistent habits","Strong follow-through"], weaknesses:["Rigid under pressure","Suppresses stress","Avoids asking for help","Slow to adapt"], opportunity:"Your consistency is a compounding asset. Streak tracking matters more for you than for most.", threat:"You will maintain the form of habits while losing the substance. Check: are you going through motions?" },
+  ISFJ:{ archetype:"The Defender", strengths:["Dedicated","Warm","Detail-oriented","Dependable"], weaknesses:["Overextends for others","Suppresses own needs","Avoids conflict"], opportunity:"Physical routine is your anchor. When workout habit holds, everything else is more stable.", threat:"You underreport stress. Reactivity and negative self-talk are your tells — watch them." },
+  ISTP:{ archetype:"The Virtuoso", strengths:["Calm under pressure","Practical problem-solving","Adaptable","Present-focused"], weaknesses:["Disengages when bored","Avoids long-term planning","Low emotional expression"], opportunity:"Chess is not just a hobby for you — it's active nervous system regulation. Protect the habit.", threat:"Low meaning + high time wasted is your spiral signal. It starts quiet." },
+  ISFP:{ archetype:"The Adventurer", strengths:["Authenticity","Present-moment awareness","Adaptable","Creative"], weaknesses:["Avoids conflict","Short-term focus","Sensitive to criticism"], opportunity:"Something enjoyable every day is not a luxury for you — it's a performance variable. Log it honestly.", threat:"Negative self-talk hits harder for your type than the score suggests. Don't underweight it." },
+  ESTJ:{ archetype:"The Executive", strengths:["Organised","Dependable","Clear decision-making","High follow-through"], weaknesses:["Approval-seeking","Stress when plans break","Dismisses emotional complexity"], opportunity:"Commitment consistency is your superpower. When you commit publicly (even to this app), you deliver.", threat:"Reactivity + negative self-talk cluster signals that your standards are exceeding your capacity. Back off the target." },
+  ESFJ:{ archetype:"The Consul", strengths:["Community-oriented","Warm","Loyal","Structured"], weaknesses:["Approval-dependent","Avoids disappointing others","Suppresses conflict"], opportunity:"Family contact is your highest-ROI health behaviour. It costs 5 minutes and pays across all three scores.", threat:"When you feel disapproved of (by yourself or others), drain spikes. Watch the correlation." },
+  ESTP:{ archetype:"The Entrepreneur", strengths:["High action","Adaptable","Charismatic","Handles crisis well"], weaknesses:["Impulsive under stress","Avoids inner work","Short-term bias"], opportunity:"Physical workout is your primary mental health tool — more than meditation. Protect the habit.", threat:"Multiple drains active simultaneously is your pattern. One bad day cascades. Catch it at the first signal." },
+  ESFP:{ archetype:"The Entertainer", strengths:["Energetic","People-focused","Spontaneous","Present-moment joy"], weaknesses:["Avoids difficult decisions","Low long-term planning","Emotional reactivity"], opportunity:"Social contact is your fuel. When family contact drops, upskill and physical scores follow within days.", threat:"Avoidance of inner work (meditation, reflection) accumulates. The cost is invisible until it isn't." },
+};
+
+function getBMICategory(bmi) {
+  if (!bmi) return null;
+  const b = parseFloat(bmi);
+  if (b < 18.5) return { label:"Underweight", color:"#c4840a", note:"Physical energy and recovery may be limited by insufficient fuel. Prioritise consistent meals." };
+  if (b < 25)   return { label:"Healthy range", color:"#3d8c6c", note:"Physical baseline is solid. Focus is on maintaining what's working." };
+  if (b < 30)   return { label:"Overweight", color:"#c4840a", note:"Workout habit and meal timing have outsized impact at this range. Small consistent changes compound." };
+  return { label:"Obese range", color:"#c8553d", note:"Physical health is the foundation everything else runs on. Prioritise sleep, daily movement, and meal regularity above all else." };
+}
+
+function getAgeInsight(age) {
+  if (!age) return null;
+  if (age < 25) return "Recovery is fast at your age — but habits formed now compound for decades. This is the highest-leverage window.";
+  if (age < 35) return "Peak cognitive and physical capacity decade. The gap between who you are and who you could be is entirely about consistency.";
+  if (age < 45) return "Recovery takes longer than it did. Sleep quality matters more than quantity. Build the habits now before the margin narrows further.";
+  return "Longevity is built on basics: sleep, movement, connection. Nothing exotic. Consistency over intensity.";
+}
+
+function buildSWOT(profile, entries, avgP, avgM, avgE, avgD) {
+  const mbtiKey = (profile?.mbti||"").toUpperCase().slice(0,4);
+  const mp = MBTI_PROFILES[mbtiKey] || null;
+  const bmi = profile?.weight && profile?.height
+    ? (parseFloat(profile.weight) / Math.pow(parseFloat(profile.height)/100, 2)).toFixed(1)
+    : null;
+  const bmiCat = getBMICategory(bmi);
+  const age = profile?.dob ? Math.floor((new Date()-new Date(profile.dob))/(365.25*86400000)) : null;
+
+  const last14 = entries.slice(-14);
+  const noContactDays = last14.filter(e=>!e.familyContact||e.familyContact==="none").length;
+  const highRuminationDays = last14.filter(e=>(e.rumination||1)>=4).length;
+  const noWorkoutDays = last14.filter(e=>!e.workoutMins||e.workoutMins<30).length;
+  const noUpskillDays = last14.filter(e=>!e.upskillHrs||e.upskillHrs<1).length;
+  const negativeSelfTalkDays = last14.filter(e=>e.negativeSelfTalk).length;
+  const highCigaretteDays = last14.filter(e=>(e.cigarettes||0)>=4).length;
+  const noMeditationDays = last14.filter(e=>!e.meditationMins||e.meditationMins<5).length;
+
+  const strengths = [];
+  const weaknesses = [];
+  const opportunities = [];
+  const threats = [];
+
+  // Strengths — confirmed by data
+  if (mp) strengths.push(...mp.strengths.slice(0,2).map(s=>({text:s, source:"personality"})));
+  if (avgP >= 70) strengths.push({text:"Strong physical foundation — body is consistently showing up", source:"data"});
+  if (avgM >= 70) strengths.push({text:"Mental clarity is above baseline — upskilling is working", source:"data"});
+  if (avgE >= 75) strengths.push({text:"Emotional stability — you're staying grounded even under load", source:"data"});
+  if (last14.filter(e=>e.meditationMins>=10).length >= 8) strengths.push({text:"Meditation habit is consistent — 8+ days of 10+ minutes in 2 weeks", source:"data"});
+  if (last14.filter(e=>e.workoutMins>=60).length >= 6) strengths.push({text:"Workout habit is holding — 3+ sessions per week average", source:"data"});
+  if (bmiCat?.label==="Healthy range") strengths.push({text:`Physical baseline is in healthy range (BMI ${bmi})`, source:"profile"});
+
+  // Weaknesses — confirmed by data
+  if (mp) weaknesses.push(...mp.weaknesses.slice(0,2).map(w=>({text:w, source:"personality"})));
+  if (noContactDays >= 7) weaknesses.push({text:`Spoke to family on only ${14-noContactDays} of the last 14 days — isolation is a confirmed pattern`, source:"data"});
+  if (highRuminationDays >= 5) weaknesses.push({text:`High rumination on ${highRuminationDays} of last 14 days — mental noise is a recurring state`, source:"data"});
+  if (negativeSelfTalkDays >= 4) weaknesses.push({text:`Negative self-talk on ${negativeSelfTalkDays} days in 2 weeks — self-criticism is active`, source:"data"});
+  if (noWorkoutDays >= 8) weaknesses.push({text:`Only ${14-noWorkoutDays} workout sessions in 2 weeks — movement is inconsistent`, source:"data"});
+  if (avgD >= 30) weaknesses.push({text:`Average drain score is ${avgD} — sustained leakage across the baseline`, source:"data"});
+  if (bmiCat && bmiCat.label !== "Healthy range") weaknesses.push({text:`BMI is ${bmi} (${bmiCat.label}) — physical baseline has room to improve`, source:"profile"});
+
+  // Opportunities — highest-leverage gaps
+  if (mp) opportunities.push({text:mp.opportunity, source:"personality"});
+  if (noUpskillDays >= 5) opportunities.push({text:`Upskilling is inconsistent — ${14-noUpskillDays} active days in 2 weeks. Closing this gap would move mental score significantly`, source:"data"});
+  if (noMeditationDays >= 7) opportunities.push({text:"Meditation below target on most days — 10 minutes daily would directly reduce rumination and drain scores", source:"data"});
+  if (age) opportunities.push({text:getAgeInsight(age), source:"profile"});
+  if (avgE < 65 && noContactDays < 10) opportunities.push({text:"Family contact is present but inconsistent — daily contact would lift emotional score by an estimated 15–20 points", source:"data"});
+
+  // Threats — active failure modes
+  if (mp) threats.push({text:mp.threat, source:"personality"});
+  if (noContactDays >= 9) threats.push({text:`${noContactDays} of 14 days without genuine connection. Isolation is building, not drifting.`, source:"data"});
+  if (highCigaretteDays >= 5) threats.push({text:`Smoking 4+ cigarettes on ${highCigaretteDays} of last 14 days — this is the single highest-cost body drain`, source:"data"});
+  if (avgM < 45 && avgD >= 35) threats.push({text:"Low mental score combined with high sustained drain — this combination precedes burnout. Address both.", source:"data"});
+  if (noWorkoutDays >= 10 && avgP < 55) threats.push({text:"Movement and physical score are both declining. Physical foundation supports everything else.", source:"data"});
+
+  return { strengths:strengths.slice(0,4), weaknesses:weaknesses.slice(0,4), opportunities:opportunities.slice(0,3), threats:threats.slice(0,3), mp, bmiCat, bmi, age };
+}
+
+/* ─── KNOW YOURSELF SCREEN ──────────────────────────────────────── */
+function KnowYourself({ profile, entries }) {
+  const hasData = entries.length >= 3;
+  const last14 = entries.slice(-14);
+  const scoreFn = (fn) => last14.length
+    ? Math.round(last14.map(e=>fn(e,entries)).reduce((a,b)=>a+b,0)/last14.length)
+    : null;
+  const avgP = hasData ? scoreFn(scorePhysical) : null;
+  const avgM = hasData ? scoreFn(scoreMental) : null;
+  const avgE = hasData ? scoreFn(scoreEmotional) : null;
+  const avgD = hasData ? scoreFn((e,all)=>scoreDrain(e,all)) : null;
+  const swot = buildSWOT(profile, entries, avgP, avgM, avgE, avgD);
+  const mbtiKey = (profile?.mbti||"").toUpperCase().slice(0,4);
+  const mp = MBTI_PROFILES[mbtiKey] || null;
+
+  const SWOTCard = ({title, icon, color, bg, items}) => (
+    <div style={{background:bg,border:`0.5px solid ${color}33`,borderRadius:"var(--r)",padding:"14px 16px",marginBottom:10}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+        <span style={{fontSize:16,color}}>{icon}</span>
+        <span style={{fontSize:11,fontWeight:600,letterSpacing:".8px",textTransform:"uppercase",color}}>{title}</span>
+      </div>
+      {items.map((item,i)=>(
+        <div key={i} style={{display:"flex",gap:10,marginBottom:i<items.length-1?10:0}}>
+          <div style={{width:5,borderRadius:2,background:color,flexShrink:0,marginTop:3}}/>
+          <div>
+            <div style={{fontSize:13,color:"var(--ink)",lineHeight:1.5}}>{item.text}</div>
+            <div style={{fontSize:10,color:"var(--muted)",marginTop:2,letterSpacing:".4px"}}>
+              {item.source==="data"?"from your data":item.source==="personality"?"from your personality type":"from your profile"}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  return (
+    <div className="scroll" style={{padding:"0 0 16px"}}>
+      <div style={{padding:"52px 16px 16px"}}>
+        <div style={{fontFamily:"var(--serif)",fontSize:22,marginBottom:4}}>Know yourself</div>
+        <div style={{fontSize:12,color:"var(--muted)"}}>
+          {hasData ? `Built from your profile + last ${Math.min(entries.length,14)} days of data.` : "Based on your profile. Check in daily to personalise with your data."}
+        </div>
+      </div>
+
+      {/* Personalisation nudge — shown until 3 check-ins */}
+      {!hasData && (
+        <div className="section">
+          <div style={{background:"#1a2a1a",border:"0.5px solid #1d9e7566",borderRadius:"var(--r)",padding:"14px 16px",display:"flex",gap:12,alignItems:"flex-start"}}>
+            <div style={{fontSize:18,color:"#1d9e75",flexShrink:0}}>◆</div>
+            <div>
+              <div style={{fontSize:13,fontWeight:500,color:"#9FE1CB",marginBottom:4}}>
+                {3-entries.length} more check-in{3-entries.length!==1?"s":""} to personalise this
+              </div>
+              <div style={{fontSize:12,color:"#5DCAA5",lineHeight:1.6}}>
+                Right now you're seeing insights based on your personality type. Once you have 3 check-ins, this page adapts to your actual patterns — your real strengths and threats, not just the ones typical for your type.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Identity card */}
+      <div className="section">
+        <div className="section-title">Your identity</div>
+        <div style={{background:"var(--bg2)",border:"0.5px solid var(--border)",borderRadius:"var(--r)",padding:"16px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:14}}>
+            <div style={{width:52,height:52,borderRadius:"50%",background:"var(--accent)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--serif)",fontSize:20,fontWeight:700,color:"#fff",flexShrink:0}}>
+              {getInitials(profile?.name||"S")}
+            </div>
+            <div>
+              <div style={{fontFamily:"var(--serif)",fontSize:18,color:"var(--ink)"}}>{profile?.name||"—"}</div>
+              {swot.mp && <div style={{fontSize:12,color:"var(--muted)",marginTop:2}}>{swot.mp.archetype}</div>}
+              {mbtiKey && <div style={{display:"inline-block",background:"#26215C",color:"#AFA9EC",fontSize:11,fontWeight:600,padding:"2px 10px",borderRadius:20,marginTop:4}}>{mbtiKey}</div>}
+            </div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            {swot.age && <div style={{background:"var(--bg3)",borderRadius:"var(--r2)",padding:"10px 12px"}}>
+              <div style={{fontSize:10,color:"var(--muted)",marginBottom:2}}>Age</div>
+              <div style={{fontFamily:"var(--serif)",fontSize:20,color:"var(--ink)"}}>{swot.age}</div>
+            </div>}
+            {swot.bmi && <div style={{background:"var(--bg3)",borderRadius:"var(--r2)",padding:"10px 12px"}}>
+              <div style={{fontSize:10,color:"var(--muted)",marginBottom:2}}>BMI</div>
+              <div style={{fontFamily:"var(--serif)",fontSize:20,color:swot.bmiCat?.color||"var(--ink)"}}>{swot.bmi}</div>
+              <div style={{fontSize:10,color:swot.bmiCat?.color,marginTop:1}}>{swot.bmiCat?.label}</div>
+            </div>}
+            {[["14-day physical",avgP,"#1d9e75"],["14-day mental",avgM,"#7f77dd"],["14-day emotional",avgE,"#c4840a"],["14-day drain",avgD,"#c8553d"]].map(([l,v,c])=>(
+              v!==null && <div key={l} style={{background:"var(--bg3)",borderRadius:"var(--r2)",padding:"10px 12px"}}>
+                <div style={{fontSize:10,color:"var(--muted)",marginBottom:2}}>{l}</div>
+                <div style={{fontFamily:"var(--serif)",fontSize:20,color:c}}>{v}%</div>
+              </div>
+            ))}
+          </div>
+          {swot.bmiCat && swot.bmiCat.label!=="Healthy range" && (
+            <div style={{marginTop:10,padding:"10px 12px",background:"var(--bg3)",borderRadius:"var(--r2)",fontSize:12,color:"var(--ink2)",lineHeight:1.6}}>
+              {swot.bmiCat.note}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* SWOT */}
+      <div className="section" style={{marginTop:16}}>
+        <div className="section-title">Your SWOT — updated from data</div>
+        <SWOTCard title="Strengths" icon="◆" color="#1d9e75" bg="var(--bg2)" items={swot.strengths}/>
+        <SWOTCard title="Weaknesses" icon="◉" color="#c8553d" bg="var(--bg2)" items={swot.weaknesses}/>
+        <SWOTCard title="Opportunities" icon="◈" color="#7f77dd" bg="var(--bg2)" items={swot.opportunities}/>
+        <SWOTCard title="Threats" icon="◇" color="#c4840a" bg="var(--bg2)" items={swot.threats}/>
+      </div>
+
+      {/* Personality deep-dive */}
+      {swot.mp && (
+        <div className="section" style={{marginTop:16}}>
+          <div className="section-title">Your type — {mbtiKey}</div>
+          <div style={{background:"var(--bg2)",border:"0.5px solid var(--border)",borderRadius:"var(--r)",padding:"16px"}}>
+            <div style={{fontFamily:"var(--serif)",fontSize:16,color:"var(--ink)",marginBottom:12}}>{swot.mp.archetype}</div>
+            <div style={{marginBottom:10}}>
+              <div style={{fontSize:10,fontWeight:600,letterSpacing:".6px",color:"#1d9e75",textTransform:"uppercase",marginBottom:6}}>Natural strengths</div>
+              {swot.mp.strengths.map((s,i)=><div key={i} style={{fontSize:13,color:"var(--ink2)",padding:"5px 0",borderBottom:"0.5px solid var(--border)",lineHeight:1.4}}>{s}</div>)}
+            </div>
+            <div style={{marginBottom:10}}>
+              <div style={{fontSize:10,fontWeight:600,letterSpacing:".6px",color:"#c8553d",textTransform:"uppercase",marginBottom:6,marginTop:12}}>Known vulnerabilities</div>
+              {swot.mp.weaknesses.map((w,i)=><div key={i} style={{fontSize:13,color:"var(--ink2)",padding:"5px 0",borderBottom:"0.5px solid var(--border)",lineHeight:1.4}}>{w}</div>)}
+            </div>
+            <div style={{marginTop:12,padding:"12px",background:"var(--bg3)",borderRadius:"var(--r2)"}}>
+              <div style={{fontSize:10,fontWeight:600,letterSpacing:".6px",color:"#c4840a",textTransform:"uppercase",marginBottom:6}}>Your specific opportunity</div>
+              <div style={{fontSize:13,color:"var(--ink2)",lineHeight:1.6}}>{swot.mp.opportunity}</div>
+            </div>
+            <div style={{marginTop:8,padding:"12px",background:"var(--bg3)",borderRadius:"var(--r2)"}}>
+              <div style={{fontSize:10,fontWeight:600,letterSpacing:".6px",color:"#c8553d",textTransform:"uppercase",marginBottom:6}}>Your specific threat</div>
+              <div style={{fontSize:13,color:"var(--ink2)",lineHeight:1.6}}>{swot.mp.threat}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!mbtiKey && (
+        <div className="section" style={{marginTop:16}}>
+          <div style={{background:"var(--bg2)",border:"0.5px solid var(--border)",borderRadius:"var(--r)",padding:"16px",textAlign:"center"}}>
+            <div style={{fontSize:14,color:"var(--ink2)",marginBottom:10,lineHeight:1.6}}>Add your MBTI type in Profile to unlock personality-based insights.</div>
+            <div style={{fontSize:12,color:"var(--muted)",marginBottom:12}}>Takes 12 minutes to discover your type.</div>
+            <div style={{fontSize:13,color:"var(--accent)",cursor:"pointer",textDecoration:"underline"}}
+              onClick={()=>window.open("https://www.16personalities.com/free-personality-test","_blank")}>
+              Take the free test →
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── MAIN APP ──────────────────────────────────────────────────── */
 export default function HealthIsh() {
   const [onboarded, setOnboarded] = useState(null);
@@ -1026,7 +1729,7 @@ export default function HealthIsh() {
     return (
       <>
         <style dangerouslySetInnerHTML={{__html:G}}/>
-        <Onboarding onDone={pr=>{setProfile(pr);setOnboarded(true);setEditingProfile(false);}}/>
+        <Onboarding existing={editingProfile ? profile : null} onDone={pr=>{setProfile(pr);setOnboarded(true);setEditingProfile(false);}}/>
       </>
     );
   }
@@ -1035,6 +1738,7 @@ export default function HealthIsh() {
     { id:"home", label:"Home", icon:<svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> },
     { id:"checkin", label:"Check in", icon:<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg> },
     { id:"history", label:"History", icon:<svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> },
+    { id:"self", label:"Know self", icon:<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg> },
     { id:"profile", label:"Profile", icon:<svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> },
   ];
 
@@ -1042,22 +1746,21 @@ export default function HealthIsh() {
     <>
       <style dangerouslySetInnerHTML={{__html:G}}/>
       <div className="app">
-        <div className="screen active" style={{display:"flex",flex:1,flexDirection:"column",overflow:"hidden"}}>
-          <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
-            {tab==="home" && <div className="screen active"><Dashboard entries={entries} profile={profile} setTab={setTab}/></div>}
-            {tab==="checkin" && <div className="screen active"><CheckIn entries={entries} onSave={handleSaveEntry} goHome={()=>setTab("home")}/></div>}
-            {tab==="history" && <div className="screen active"><History entries={entries}/></div>}
-            {tab==="profile" && <div className="screen active"><Profile profile={profile} entries={entries} onEdit={()=>setEditingProfile(true)}/></div>}
-          </div>
-          <nav className="nav">
-            {tabs.map(t=>(
-              <button key={t.id} className={`nav-btn ${tab===t.id?"active":""}`} onClick={()=>setTab(t.id)}>
-                {t.icon}
-                <span>{t.label}</span>
-              </button>
-            ))}
-          </nav>
+        <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",minHeight:0}}>
+          {tab==="home"    && <div className="screen active"><Dashboard entries={entries} profile={profile} setTab={setTab}/></div>}
+          {tab==="checkin" && <div className="screen active"><CheckIn entries={entries} onSave={handleSaveEntry} goHome={()=>setTab("home")}/></div>}
+          {tab==="history" && <div className="screen active"><History entries={entries}/></div>}
+          {tab==="self"    && <div className="screen active"><KnowYourself profile={profile} entries={entries}/></div>}
+          {tab==="profile" && <div className="screen active"><Profile profile={profile} entries={entries} onEdit={()=>setEditingProfile(true)}/></div>}
         </div>
+        <nav className="nav">
+          {tabs.map(t=>(
+            <button key={t.id} className={`nav-btn ${tab===t.id?"active":""}`} onClick={()=>setTab(t.id)}>
+              {t.icon}
+              <span>{t.label}</span>
+            </button>
+          ))}
+        </nav>
       </div>
     </>
   );
