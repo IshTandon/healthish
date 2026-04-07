@@ -2,9 +2,10 @@ import { useState, useEffect, useRef } from "react";
 
 /* ─── STORAGE KEYS ─────────────────────────────────────────────── */
 const KEYS = {
-  entries: "healthish:entries",
-  profile: "healthish:profile",
-  onboarded: "healthish:onboarded",
+  entries:    "healthish:entries",
+  profile:    "healthish:profile",
+  onboarded:  "healthish:onboarded",
+  icp:        "healthish:icp",        // struggle + goal — collected once
 };
 
 /* ─── SCORING ENGINE ────────────────────────────────────────────── */
@@ -1130,8 +1131,10 @@ function CheckIn({ entries, onSave, goHome }) {
 }
 
 /* ─── RECOMMENDATIONS ENGINE ────────────────────────────────────── */
-function getRecommendations(todayEntry, allEntries, pScore, mScore, eScore, dScore) {
+function getRecommendations(todayEntry, allEntries, pScore, mScore, eScore, dScore, icp) {
   if (!todayEntry) return [];
+  const struggles = icp?.struggles || [];
+  const goals     = icp?.goals     || [];
   const recs = [];
   const streak = (fn) => {
     let s = 0;
@@ -1245,11 +1248,28 @@ function getRecommendations(todayEntry, allEntries, pScore, mScore, eScore, dSco
     effort:"2 min"
   });
 
+  // ── ICP PRIORITY BOOST ──────────────────────────────────────────
+  // Elevate recommendations that match stated struggles and goals
+  recs.forEach(r => {
+    if (struggles.includes("energy")        && ["sleep","energy","movement"].includes(r.category)) r.priority -= 1;
+    if (struggles.includes("focus")         && ["mental clarity","direction","screen time"].includes(r.category)) r.priority -= 1;
+    if (struggles.includes("burnout")       && ["drain","emotional reset","meaning"].includes(r.category)) r.priority -= 1;
+    if (struggles.includes("noise")         && ["anxiety","mental noise","self-talk"].includes(r.category)) r.priority -= 1;
+    if (struggles.includes("inconsistency") && ["direction","movement","drain"].includes(r.category)) r.priority -= 1;
+    if (struggles.includes("isolation")     && ["isolation","emotional reset"].includes(r.category)) r.priority -= 1;
+
+    if (goals.includes("momentum")   && ["direction","movement"].includes(r.category)) r.priority -= 1;
+    if (goals.includes("drain")      && ["drain","anxiety","mental noise","screen time"].includes(r.category)) r.priority -= 1;
+    if (goals.includes("physical")   && ["sleep","energy","movement"].includes(r.category)) r.priority -= 1;
+    if (goals.includes("focus_deep") && ["mental clarity","direction","screen time"].includes(r.category)) r.priority -= 1;
+    if (goals.includes("patterns")   && r.priority <= 2) r.priority -= 0; // patterns goal = no boost, just show all
+  });
+
   return recs.sort((a,b)=>a.priority-b.priority).slice(0,4);
 }
 
 /* ─── DASHBOARD ─────────────────────────────────────────────────── */
-function Dashboard({ entries, profile, setTab }) {
+function Dashboard({ entries, profile, setTab, icp }) {
   const today = TODAY();
   const todayEntry = entries.find(e=>e.date===today);
   const recentEntries = entries.slice(-14);
@@ -1288,13 +1308,19 @@ function Dashboard({ entries, profile, setTab }) {
   }
   if (!signals.length && !todayEntry) signals.push({color:"#7a7268", text:"No check-in yet today. Tap the + tab to log your day."});
 
-  const recs = getRecommendations(todayEntry, recentEntries, pScore, mScore, eScore, dScore);
+  const recs = getRecommendations(todayEntry, recentEntries, pScore, mScore, eScore, dScore, icp);
 
   const firstName = (profile?.name||"there").split(" ")[0];
   const initials = getInitials(profile?.name||"S");
   const now = new Date();
   const hour = now.getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+
+  // ICP context — what they said they're working on
+  const goalLabels = { momentum:"consistent momentum", drain:"reducing cognitive drain", patterns:"understanding your patterns", physical:"your physical baseline", focus_deep:"deep focus" };
+  const goalText = icp?.goals?.length
+    ? icp.goals.map(g=>goalLabels[g]).filter(Boolean).join(" · ")
+    : null;
 
   return (
     <div className="scroll">
@@ -1305,6 +1331,11 @@ function Dashboard({ entries, profile, setTab }) {
             {now.toLocaleDateString("en-IN",{weekday:"long",day:"numeric",month:"long"})}
             {entries.length > 0 && <> · Day {entries.length}</>}
           </div>
+          {goalText && (
+            <div style={{fontSize:11,color:"var(--teal)",marginTop:4,fontWeight:500}}>
+              Working on: {goalText}
+            </div>
+          )}
         </div>
         <div className="avatar" onClick={()=>setTab("profile")}>{initials}</div>
       </div>
@@ -2025,6 +2056,154 @@ function KnowYourself({ profile, entries }) {
   );
 }
 
+/* ─── ICP ONBOARDING ────────────────────────────────────────────── */
+const STRUGGLES = [
+  { id:"energy",        label:"Low energy",               sub:"Running on fumes most days" },
+  { id:"focus",         label:"Lack of focus",             sub:"Mind is scattered, hard to go deep" },
+  { id:"burnout",       label:"Burnout",                   sub:"Doing a lot but feeling empty" },
+  { id:"noise",         label:"Mental noise",              sub:"Circular thinking, can't switch off" },
+  { id:"inconsistency", label:"Inconsistency",             sub:"Starting strong, dropping off" },
+  { id:"isolation",     label:"Social isolation",          sub:"Disconnecting from people who matter" },
+];
+
+const GOALS = [
+  { id:"momentum",    label:"Build consistent momentum",   sub:"Show up every day, not just when motivated" },
+  { id:"drain",       label:"Reduce cognitive drain",      sub:"Less noise, more clarity" },
+  { id:"patterns",    label:"Understand my patterns",      sub:"Know what actually drives my good and bad days" },
+  { id:"physical",    label:"Improve physical baseline",   sub:"Sleep, energy, movement — fix the foundation" },
+  { id:"focus_deep",  label:"Improve deep focus",          sub:"More output in less time" },
+];
+
+function ICPOnboarding({ onDone }) {
+  const [step, setStep]         = useState(1);
+  const [struggles, setStruggles] = useState([]); // array — multi-select
+  const [goals, setGoals]       = useState([]);   // array — multi-select
+
+  const toggle = (arr, setArr, id) => {
+    setArr(arr.includes(id) ? arr.filter(x=>x!==id) : [...arr, id]);
+  };
+
+  const handleDone = async () => {
+    const icp = { struggles, goals, completedAt: new Date().toISOString() };
+    await storageSet(KEYS.icp, icp);
+    onDone(icp);
+  };
+
+  const MultiCard = ({ item, selected, onToggle }) => (
+    <div onClick={onToggle} style={{
+      padding:"14px 16px", borderRadius:"var(--r)", cursor:"pointer",
+      marginBottom:10, transition:"all .15s",
+      background: selected ? "#1a1208" : "var(--bg2)",
+      border: `0.5px solid ${selected ? "var(--accent)" : "var(--border)"}`,
+      display:"flex", alignItems:"flex-start", gap:12,
+    }}>
+      {/* Checkbox indicator */}
+      <div style={{
+        width:18, height:18, borderRadius:5, flexShrink:0, marginTop:1,
+        background: selected ? "var(--accent)" : "transparent",
+        border: `1.5px solid ${selected ? "var(--accent)" : "var(--border2)"}`,
+        display:"flex", alignItems:"center", justifyContent:"center",
+        transition:"all .15s",
+      }}>
+        {selected && <span style={{color:"#fff", fontSize:11, fontWeight:700, lineHeight:1}}>✓</span>}
+      </div>
+      <div style={{flex:1}}>
+        <div style={{
+          fontSize:14, fontWeight:500, marginBottom:3,
+          color: selected ? "var(--accent)" : "var(--ink)",
+        }}>{item.label}</div>
+        <div style={{fontSize:12, color:"var(--muted)", lineHeight:1.5}}>{item.sub}</div>
+      </div>
+    </div>
+  );
+
+  const canContinue1 = struggles.length > 0;
+  const canContinue2 = goals.length > 0;
+
+  return (
+    <div style={{
+      height:"100vh", display:"flex", flexDirection:"column",
+      background:"var(--bg)", overflow:"hidden",
+    }}>
+      {/* Scrollable content */}
+      <div style={{flex:1, overflowY:"auto", padding:"52px 24px 0", WebkitOverflowScrolling:"touch"}}>
+        {/* Progress bar */}
+        <div style={{display:"flex", gap:6, marginBottom:32}}>
+          {[1,2].map(s => (
+            <div key={s} style={{
+              flex:1, height:3, borderRadius:2,
+              background: s <= step ? "var(--accent)" : "var(--border)",
+              transition:"background .3s",
+            }}/>
+          ))}
+        </div>
+
+        {step === 1 && (<>
+          <div style={{fontFamily:"var(--serif)", fontSize:26, color:"var(--ink)", marginBottom:8, lineHeight:1.3}}>
+            What are you struggling with?
+          </div>
+          <div style={{fontSize:13, color:"var(--muted)", marginBottom:24, lineHeight:1.6}}>
+            Select everything that applies. Be honest — this shapes how the app reads your data.
+          </div>
+          {STRUGGLES.map(s => (
+            <MultiCard key={s.id} item={s}
+              selected={struggles.includes(s.id)}
+              onToggle={() => toggle(struggles, setStruggles, s.id)}/>
+          ))}
+          <div style={{height:24}}/>
+        </>)}
+
+        {step === 2 && (<>
+          <div style={{fontFamily:"var(--serif)", fontSize:26, color:"var(--ink)", marginBottom:8, lineHeight:1.3}}>
+            What do you want to build?
+          </div>
+          <div style={{fontSize:13, color:"var(--muted)", marginBottom:24, lineHeight:1.6}}>
+            Select all that matter. You're not locked in — this evolves as you do.
+          </div>
+          {GOALS.map(g => (
+            <MultiCard key={g.id} item={g}
+              selected={goals.includes(g.id)}
+              onToggle={() => toggle(goals, setGoals, g.id)}/>
+          ))}
+          <div style={{height:24}}/>
+        </>)}
+      </div>
+
+      {/* Fixed bottom buttons */}
+      <div style={{padding:"16px 24px 32px", background:"var(--bg)", borderTop:"0.5px solid var(--border)", flexShrink:0}}>
+        {step === 1 && (
+          <button onClick={() => canContinue1 && setStep(2)} disabled={!canContinue1} style={{
+            width:"100%", padding:15,
+            background: canContinue1 ? "var(--accent)" : "var(--bg3)",
+            color: canContinue1 ? "#fff" : "var(--muted)",
+            borderRadius:"var(--r)", fontSize:15, fontWeight:500,
+            cursor: canContinue1 ? "pointer" : "not-allowed", transition:"all .2s",
+          }}>
+            {canContinue1 ? `Continue with ${struggles.length} selected →` : "Select at least one"}
+          </button>
+        )}
+        {step === 2 && (
+          <div style={{display:"flex", gap:10}}>
+            <button onClick={() => setStep(1)} style={{
+              flex:1, padding:15, background:"transparent", color:"var(--muted)",
+              border:"0.5px solid var(--border)", borderRadius:"var(--r)", fontSize:14,
+            }}>← Back</button>
+            <button onClick={() => canContinue2 && handleDone()} disabled={!canContinue2} style={{
+              flex:2, padding:15,
+              background: canContinue2 ? "var(--accent)" : "var(--bg3)",
+              color: canContinue2 ? "#fff" : "var(--muted)",
+              borderRadius:"var(--r)", fontSize:15, fontWeight:500,
+              cursor: canContinue2 ? "pointer" : "not-allowed", transition:"all .2s",
+            }}>
+              {canContinue2 ? `Let's go →` : "Select at least one"}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ─── MAIN APP ──────────────────────────────────────────────────── */
 export default function HealthIsh() {
   const [onboarded, setOnboarded] = useState(null);
@@ -2032,15 +2211,18 @@ export default function HealthIsh() {
   const [entries, setEntries] = useState([]);
   const [tab, setTab] = useState("home");
   const [editingProfile, setEditingProfile] = useState(false);
+  const [icp, setIcp] = useState(undefined); // undefined = loading
 
   useEffect(()=>{
     (async()=>{
       const ob = await storageGet(KEYS.onboarded);
       const pr = await storageGet(KEYS.profile);
       const en = await storageGet(KEYS.entries);
+      const ic = await storageGet(KEYS.icp);
       setOnboarded(!!ob);
       setProfile(pr||null);
       setEntries(en||[]);
+      setIcp(ic||null); // null = not completed yet
     })();
   },[]);
 
@@ -2056,15 +2238,27 @@ export default function HealthIsh() {
     await storageSet(KEYS.entries, updated);
   };
 
-  if (onboarded === null) {
+  // Still loading
+  if (onboarded === null || icp === undefined) {
     return <div style={{background:"var(--bg)",minHeight:"100vh"}}/>;
   }
 
+  // First-time profile setup
   if (!onboarded || editingProfile) {
     return (
       <>
         <style dangerouslySetInnerHTML={{__html:G}}/>
         <Onboarding existing={editingProfile ? profile : null} onDone={pr=>{setProfile(pr);setOnboarded(true);setEditingProfile(false);}}/>
+      </>
+    );
+  }
+
+  // ICP onboarding — shown to everyone who hasn't completed it yet
+  if (!icp) {
+    return (
+      <>
+        <style dangerouslySetInnerHTML={{__html:G}}/>
+        <ICPOnboarding onDone={(ic) => setIcp(ic)}/>
       </>
     );
   }
@@ -2082,7 +2276,7 @@ export default function HealthIsh() {
       <style dangerouslySetInnerHTML={{__html:G}}/>
       <div className="app">
         <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",minHeight:0}}>
-          {tab==="home"    && <div className="screen active"><Dashboard entries={entries} profile={profile} setTab={setTab}/></div>}
+          {tab==="home"    && <div className="screen active"><Dashboard entries={entries} profile={profile} setTab={setTab} icp={icp}/></div>}
           {tab==="checkin" && <div className="screen active"><CheckIn entries={entries} onSave={handleSaveEntry} goHome={()=>setTab("home")}/></div>}
           {tab==="history" && <div className="screen active"><History entries={entries}/></div>}
           {tab==="self"    && <div className="screen active"><KnowYourself profile={profile} entries={entries}/></div>}
