@@ -619,6 +619,7 @@ function CheckIn({ entries, onSave, goHome }) {
 
   const [activePeriod, setActivePeriod] = useState(currentPeriod || "evening");
   const [submitted, setSubmitted] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   // Level selector — only for evening
   const recentDates = [...new Set(entries.map(e=>e.date))].sort().slice(-3);
@@ -671,6 +672,7 @@ function CheckIn({ entries, onSave, goHome }) {
 
   // Re-populate state whenever activePeriod changes
   useEffect(() => {
+    setIsResetting(true);
     const periods = getDayEntries(entries, today);
     const e = periods[activePeriod] || {};
     setWorkoutMins(e.workoutMins??0);
@@ -707,7 +709,9 @@ function CheckIn({ entries, onSave, goHome }) {
     setReactivity(e.reactivity??false);
     setSubmitted(false);
     if (activePeriod === "evening" && e.checkInLevel) setLevel(e.checkInLevel);
-  }, [activePeriod, entries]); // include entries so stale closure is avoided
+    // Small timeout to let React flush state before rendering form
+    setTimeout(() => setIsResetting(false), 50);
+  }, [activePeriod, entries]);
 
   // Derive numeric values from time/bucket strings for scoring
   const timeToMins = t => {
@@ -907,6 +911,16 @@ function CheckIn({ entries, onSave, goHome }) {
       <div className="toggle-row">
         <div className={`tog ${val===true?"on":""}`} onClick={()=>setVal(true)}>Yes</div>
         <div className={`tog ${val===false&&val!==null?"off":""}`} onClick={()=>setVal(false)}>No</div>
+      </div>
+    );
+  }
+
+  if (isResetting) {
+    return (
+      <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",background:"var(--bg)"}}>
+        <div style={{fontFamily:"var(--serif)",fontSize:20,color:"var(--muted)"}}>
+          {PERIODS[activePeriod]?.icon}
+        </div>
       </div>
     );
   }
@@ -1493,6 +1507,15 @@ function Dashboard({ entries, profile, setTab, icp }) {
   const dScore = todayEntry ? scoreDrain(todayEntry, recentEntries) : null;
   const dInfo  = dScore !== null ? drainLabel(dScore) : null;
 
+  // If no merged today entry but there are legacy entries for today, use them directly
+  const legacyToday = !todayEntry ? entries.find(e => e.date === today) : null;
+  const effectiveTodayEntry = todayEntry || legacyToday;
+  const effectivePScore = effectiveTodayEntry && !todayEntry ? scorePhysical(effectiveTodayEntry, entries) : pScore;
+  const effectiveMScore = effectiveTodayEntry && !todayEntry ? scoreMental(effectiveTodayEntry) : mScore;
+  const effectiveEScore = effectiveTodayEntry && !todayEntry ? scoreEmotional(effectiveTodayEntry, entries) : eScore;
+  const effectiveDScore = effectiveTodayEntry && !todayEntry ? scoreDrain(effectiveTodayEntry, entries) : dScore;
+  const effectiveDInfo  = effectiveDScore !== null ? drainLabel(effectiveDScore) : null;
+
   // Period completion status for today
   const currentPeriod = getCurrentPeriod();
   const periodsDone = {
@@ -1516,20 +1539,20 @@ function Dashboard({ entries, profile, setTab, icp }) {
   // signals
   const signals = [];
   if (todayEntry) {
-    if (dScore >= 41) signals.push({color:"#c8553d", text:`Drain is heavy today (${dScore}/100). Multiple drains compounding.`});
-    else if (dScore >= 16) signals.push({color:"#c4840a", text:`Leaking today — drain score ${dScore}. Check what's pulling you down.`});
-    if (mScore < 50) signals.push({color:"#c8553d", text:`Mental score is ${mScore}%. Screen time or upskilling gap is the likely cause.`});
+    if (effectiveDScore >= 41) signals.push({color:"#c8553d", text:`Drain is heavy today (${dScore}/100). Multiple drains compounding.`});
+    else if (effectiveDScore >= 16) signals.push({color:"#c4840a", text:`Leaking today — drain score ${effectiveDScore}. Check what's pulling you down.`});
+    if (effectiveMScore < 50) signals.push({color:"#c8553d", text:`Mental score is ${effectiveMScore}%. Screen time or upskilling gap is the likely cause.`});
     if (!todayEntry.familyContact || todayEntry.familyContact==="none") {
       const streak = recentEntries.filter(e=>!e.familyContact||e.familyContact==="none").length;
       if (streak>=3) signals.push({color:"#c8553d", text:`${streak} days without a genuine conversation with someone you love. Isolation pattern building.`});
     }
-    if (pScore >= 80) signals.push({color:"#3d8c6c", text:`Strong physical day. Body is doing its job.`});
-    if (eScore >= 80) signals.push({color:"#3d8c6c", text:`Emotional baseline is solid at ${eScore}%.`});
+    if (effectivePScore >= 80) signals.push({color:"#3d8c6c", text:`Strong physical day. Body is doing its job.`});
+    if (effectiveEScore >= 80) signals.push({color:"#3d8c6c", text:`Emotional baseline is solid at ${effectiveEScore}%.`});
     if ((todayEntry.upskillHrs||0) >= 2) signals.push({color:"#3d8c6c", text:`Upskilling target hit. Forward motion is real.`});
   }
   if (!signals.length && !todayEntry) signals.push({color:"#7a7268", text:"No check-in yet today. Tap the + tab to log your day."});
 
-  const recs = getRecommendations(todayEntry, recentEntries, pScore, mScore, eScore, dScore, icp);
+  const recs = getRecommendations(effectiveTodayEntry || todayEntry, recentEntries, effectivePScore, effectiveMScore, effectiveEScore, effectiveDScore, icp);
 
   const firstName = (profile?.name||"there").split(" ")[0];
   const initials = getInitials(profile?.name||"S");
@@ -1565,9 +1588,9 @@ function Dashboard({ entries, profile, setTab, icp }) {
       {/* RINGS */}
       <div className="rings-row fade-up" style={{animationDelay:".05s"}}>
         {[
-          {label:"Physical", score:pScore, color:"#1d9e75"},
-          {label:"Mental",   score:mScore, color:"#7f77dd"},
-          {label:"Emotional",score:eScore, color:"#c4840a"},
+          {label:"Physical", score:effectivePScore, color:"#1d9e75"},
+          {label:"Mental",   score:effectiveMScore, color:"#7f77dd"},
+          {label:"Emotional",score:effectiveEScore, color:"#c4840a"},
         ].map(({label,score,color})=>(
           <div className="ring-card" key={label}>
             <div className="ring-name">{label}</div>
@@ -1583,15 +1606,15 @@ function Dashboard({ entries, profile, setTab, icp }) {
       </div>
 
       {/* DRAIN CARD */}
-      {dScore!==null && (
+      {effectiveDScore!==null && (
         <div className="drain-card fade-up" style={{animationDelay:".1s"}}>
           <div>
             <div className="drain-label">Drain</div>
-            <div className="drain-score" style={{color:dInfo.color}}>{dScore}</div>
-            <div style={{fontSize:11,color:dInfo.color,fontWeight:500}}>{dInfo.label}</div>
+            <div className="drain-score" style={{color:effectiveDInfo.color}}>{ effectiveDScore}</div>
+            <div style={{fontSize:11,color:effectiveDInfo.color,fontWeight:500}}>{effectiveDInfo.label}</div>
           </div>
           <div className="drain-bar-bg">
-            <div className="drain-bar" style={{width:`${dScore}%`,background:dInfo.color}}/>
+            <div className="drain-bar" style={{width:`${dScore}%`,background:effectiveDInfo.color}}/>
           </div>
           <div style={{textAlign:"right"}}>
             <div style={{fontSize:10,color:"var(--muted)",marginBottom:2}}>out of</div>
@@ -1885,6 +1908,19 @@ function History({ entries }) {
 
 /* ─── PROFILE ───────────────────────────────────────────────────── */
 function Profile({ profile, entries, onEdit }) {
+  const [notifEnabled, setNotifEnabled] = useState(
+    localStorage.getItem("healthish:notif") === "granted"
+  );
+
+  const handleEnableNotif = async () => {
+    try {
+      await requestNotificationPermission();
+      localStorage.setItem("healthish:notif", "granted");
+      setNotifEnabled(true);
+    } catch(e) {
+      console.log("notif error", e);
+    }
+  };
   const bmi = profile?.weight && profile?.height
     ? (profile.weight / Math.pow(profile.height/100, 2)).toFixed(1)
     : null;
@@ -1954,15 +1990,23 @@ function Profile({ profile, entries, onEdit }) {
           <div style={{fontSize:13,color:"var(--ink2)",lineHeight:1.6,marginBottom:12}}>
             Get reminded to check in 3 times a day — morning (8am), midday (2pm), and evening (9pm).
           </div>
-          <button
-            onClick={requestNotificationPermission}
-            style={{
+          {notifEnabled ? (
+            <div style={{
+              width:"100%", padding:12, borderRadius:"var(--r2)",
+              background:"#0f2a1a", border:"0.5px solid #1d9e7566",
+              fontSize:13, fontWeight:500, color:"#3d8c6c", textAlign:"center",
+            }}>
+              ✓ Check-in reminders enabled
+            </div>
+          ) : (
+            <button onClick={handleEnableNotif} style={{
               width:"100%", padding:12, borderRadius:"var(--r2)",
               background:"var(--accent)", color:"#fff",
               fontSize:13, fontWeight:500,
             }}>
-            Enable check-in reminders
-          </button>
+              Enable check-in reminders
+            </button>
+          )}
           <div style={{fontSize:11,color:"var(--muted)",marginTop:8,lineHeight:1.5,textAlign:"center"}}>
             You can turn these off anytime in your phone settings
           </div>
