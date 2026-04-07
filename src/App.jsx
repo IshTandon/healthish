@@ -5,8 +5,108 @@ const KEYS = {
   entries:    "healthish:entries",
   profile:    "healthish:profile",
   onboarded:  "healthish:onboarded",
-  icp:        "healthish:icp",        // struggle + goal — collected once
+  icp:        "healthish:icp",
 };
+
+/* ─── ONESIGNAL ─────────────────────────────────────────────────── */
+const ONESIGNAL_APP_ID = "c4a25421-fc97-4772-8bf4-4453b5de6e4f";
+
+function initOneSignal() {
+  if (typeof window === "undefined") return;
+  window.OneSignalDeferred = window.OneSignalDeferred || [];
+  window.OneSignalDeferred.push(async (OneSignal) => {
+    await OneSignal.init({
+      appId: ONESIGNAL_APP_ID,
+      serviceWorkerParam: { scope: "/" },
+      notifyButton: { enable: false },
+      allowLocalhostAsSecureOrigin: true,
+    });
+  });
+}
+
+async function requestNotificationPermission() {
+  try {
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    window.OneSignalDeferred.push(async (OneSignal) => {
+      const permission = await OneSignal.Notifications.requestPermission();
+      return permission;
+    });
+  } catch(e) {
+    console.log("Notification permission request failed", e);
+  }
+}
+
+/* ─── PERIOD HELPERS ────────────────────────────────────────────── */
+const PERIODS = {
+  morning: { label:"Morning",  hours:[8,12],  icon:"🌅", color:"#c4840a" },
+  midday:  { label:"Midday",   hours:[14,18], icon:"☀️",  color:"#7f77dd" },
+  evening: { label:"Evening",  hours:[20,24], icon:"🌙", color:"#1d9e75" },
+};
+
+// Returns which period is active right now, or null if between windows
+function getCurrentPeriod() {
+  const h = new Date().getHours();
+  if (h >= 8  && h < 12) return "morning";
+  if (h >= 14 && h < 18) return "midday";
+  if (h >= 20)           return "evening";
+  return null;
+}
+
+// Entry key includes period: "2026-04-08:morning"
+const periodKey = (date, period) => `${date}:${period}`;
+
+// Get all entries for a given date across all periods
+function getDayEntries(entries, date) {
+  return {
+    morning: entries.find(e => e.date === date && e.period === "morning") || null,
+    midday:  entries.find(e => e.date === date && e.period === "midday")  || null,
+    evening: entries.find(e => e.date === date && e.period === "evening") || null,
+  };
+}
+
+// Merge day entries into a single scoring object
+function mergeDayEntries(day) {
+  const { morning, midday, evening } = day;
+  if (!morning && !midday && !evening) return null;
+  return {
+    ...( morning || {}),
+    ...( midday  || {}),
+    ...( evening || {}),
+    // Scoring fields — use most recent non-null value
+    date:           (evening||midday||morning).date,
+    sleepHrs:       morning?.sleepHrs       ?? 7,
+    bedtimeHr:      morning?.bedtimeHr      ?? 23,
+    energy:         morning?.energy         ?? 3,
+    sunlight:       morning?.sunlight       ?? false,
+    mealBefore2:    morning?.mealBefore2    ?? false,
+    caffeineCups:   (evening||midday||morning)?.caffeineCups ?? 2,
+    upskillHrs:     (midday||evening)?.upskillHrs    ?? 0,
+    clarity:        midday?.clarity         ?? 3,
+    screenTimeHrs:  (midday||evening)?.screenTimeHrs ?? 3,
+    sideHustle:     (evening||midday)?.sideHustle    ?? "none",
+    hobbyMins:      (evening||midday)?.hobbyMins     ?? 0,
+    pagesRead:      (evening||midday)?.pagesRead     ?? 0,
+    meditationMins: evening?.meditationMins ?? 0,
+    mood:           (evening||midday||morning)?.mood ?? 3,
+    familyContact:  evening?.familyContact  ?? "none",
+    contactQuality: evening?.contactQuality ?? false,
+    meaning:        evening?.meaning        ?? false,
+    enjoyable:      evening?.enjoyable      ?? false,
+    gratitude:      evening?.gratitude      ?? "",
+    cigarettes:     evening?.cigarettes     ?? 0,
+    alcohol:        evening?.alcohol        ?? 0,
+    sugarDay:       evening?.sugarDay       ?? false,
+    junkDinner:     evening?.junkDinner     ?? false,
+    hydrated:       evening?.hydrated       ?? true,
+    timeWasted:     evening?.timeWasted     ?? 0,
+    rumination:     (evening||midday)?.rumination    ?? 1,
+    negativeSelfTalk: evening?.negativeSelfTalk ?? false,
+    socialMins:     (evening||midday)?.socialMins    ?? 0,
+    masturbation:   evening?.masturbation   ?? false,
+    lateNightPhone: evening?.lateNightPhone ?? false,
+    reactivity:     evening?.reactivity     ?? false,
+  };
+}
 
 /* ─── SCORING ENGINE ────────────────────────────────────────────── */
 function scorePhysical(e, allEntries) {
@@ -514,56 +614,299 @@ function Onboarding({ onDone, existing }) {
 /* ─── CHECK-IN FORM ─────────────────────────────────────────────── */
 function CheckIn({ entries, onSave, goHome }) {
   const today = TODAY();
-  const existing = entries.find(e=>e.date===today) || {};
-  const [submitted, setSubmitted] = useState(!!existing.submitted);
+  const currentPeriod = getCurrentPeriod();
+  const todayPeriods = getDayEntries(entries, today);
+  const [activePeriod, setActivePeriod] = useState(currentPeriod || "evening");
 
-  // Determine auto-suggested level based on recent drain data
-  const recentEntries = entries.slice(-3);
-  const avgRecentDrain = recentEntries.length
-    ? Math.round(recentEntries.map(e=>scoreDrain(e,entries)).reduce((a,b)=>a+b,0)/recentEntries.length)
+  return (
+    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minHeight:0}}>
+      {activePeriod === "morning" && (
+        <MorningForm key="morning" entries={entries} onSave={onSave} goHome={goHome}
+          activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
+      )}
+      {activePeriod === "midday" && (
+        <MiddayForm key="midday" entries={entries} onSave={onSave} goHome={goHome}
+          activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
+      )}
+      {activePeriod === "evening" && (
+        <EveningForm key="evening" entries={entries} onSave={onSave} goHome={goHome}
+          activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
+      )}
+    </div>
+  );
+}
+
+/* ─── PERIOD TABS COMPONENT ─────────────────────────────────────── */
+function PeriodTabs({ activePeriod, setActivePeriod, todayPeriods }) {
+  return (
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:16,padding:"52px 16px 0"}}>
+      {Object.entries(PERIODS).map(([id, p]) => {
+        const done = !!(todayPeriods && todayPeriods[id]);
+        const isActive = activePeriod === id;
+        return (
+          <div key={id} onClick={()=>setActivePeriod(id)} style={{
+            padding:"9px 4px", borderRadius:"var(--r2)", textAlign:"center",
+            cursor:"pointer", transition:"all .15s",
+            background: isActive ? "var(--bg3)" : "var(--bg2)",
+            border: `0.5px solid ${isActive ? "var(--accent)" : done ? "#1d9e7544" : "var(--border)"}`,
+          }}>
+            <div style={{fontSize:13}}>{p.icon}</div>
+            <div style={{fontSize:10,fontWeight:500,marginTop:2,color:isActive?"var(--accent)":done?"#3d8c6c":"var(--muted)"}}>{p.label}</div>
+            {done && <div style={{fontSize:9,color:"#3d8c6c"}}>✓</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─── MORNING FORM ───────────────────────────────────────────────── */
+function MorningForm({ entries, onSave, goHome, activePeriod, setActivePeriod, todayPeriods }) {
+  const today = TODAY();
+  const existing = getDayEntries(entries, today).morning || {};
+  const [submitted, setSubmitted] = useState(!!existing.submitted);
+  const [sleepBucket, setSleepBucket] = useState(existing.sleepBucket ?? "7-8");
+  const [bedtime, setBedtime] = useState(existing.bedtime ?? "23:00");
+  const [energy, setEnergy] = useState(existing.energy ?? 3);
+  const [sunlight, setSunlight] = useState(existing.sunlight ?? null);
+  const [mealBefore2, setMealBefore2] = useState(existing.mealBefore2 ?? null);
+
+  const sleepBucketToHrs = b => ({"under-5":4,"5-6":5.5,"6-7":6.5,"7-8":7.5,"8-9":8.5,"9+":9.5}[b]??7.5);
+  const bedtimeToHr = t => { const [h] = (t||"23:00").split(":").map(Number); return h>=20?h:h+24; };
+
+  const handleSave = async () => {
+    await onSave({
+      date:today, period:"morning", submitted:true,
+      sleepBucket, sleepHrs:sleepBucketToHrs(sleepBucket),
+      bedtime, bedtimeHr:bedtimeToHr(bedtime),
+      energy, sunlight, mealBefore2,
+    });
+    setSubmitted(true);
+  };
+
+  if (submitted) return (
+    <div className="scroll" style={{padding:"52px 16px 16px",textAlign:"center"}}>
+      <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
+      <div style={{padding:"40px 0"}}>
+        <div style={{fontFamily:"var(--serif)",fontSize:28,marginBottom:10,color:"var(--ink)"}}>🌅 Logged.</div>
+        <div style={{fontSize:14,color:"var(--muted)",marginBottom:24}}>Morning captured. Check back at 2pm.</div>
+        <button style={{background:"var(--accent)",color:"#fff",padding:"12px 28px",borderRadius:"var(--r)",fontSize:14}} onClick={goHome}>Back to dashboard</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="scroll" style={{padding:"0 0 16px"}}>
+      <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
+      <div style={{padding:"0 16px 8px"}}>
+        <div style={{fontFamily:"var(--serif)",fontSize:20,marginBottom:2}}>🌅 Morning check-in</div>
+        <div style={{fontSize:12,color:"var(--muted)"}}>Sleep + energy · 60 seconds</div>
+      </div>
+      <div className="section">
+        <div className="ci-block">
+          <SleepBucketField val={sleepBucket} setVal={setSleepBucket}/>
+          <TimePickerField label="Bedtime last night" val={bedtime} setVal={setBedtime} hint="when you got into bed"/>
+          <ScalePickerField label="Physical energy right now" val={energy} setVal={setEnergy} low="Depleted" high="Fully charged"/>
+          <div className="ci-row">
+            <div className="ci-q"><span>Morning sunlight?</span></div>
+            <YesNoField val={sunlight} setVal={setSunlight}/>
+          </div>
+          <div className="ci-row">
+            <div className="ci-q"><span>First meal before 2pm planned?</span></div>
+            <YesNoField val={mealBefore2} setVal={setMealBefore2}/>
+          </div>
+        </div>
+      </div>
+      <button className="submit-btn" onClick={handleSave}>Log morning →</button>
+    </div>
+  );
+}
+
+/* ─── MIDDAY FORM ────────────────────────────────────────────────── */
+function MiddayForm({ entries, onSave, goHome, activePeriod, setActivePeriod, todayPeriods }) {
+  const today = TODAY();
+  const existing = getDayEntries(entries, today).midday || {};
+  const [submitted, setSubmitted] = useState(!!existing.submitted);
+  const [clarity, setClarity] = useState(existing.clarity ?? 3);
+  const [screenTime, setScreenTime] = useState(existing.screenTime ?? "0");
+  const [mood, setMood] = useState(existing.mood ?? 3);
+  const [rumination, setRumination] = useState(existing.rumination ?? 1);
+  const [upskillTime, setUpskillTime] = useState(existing.upskillTime ?? "0");
+
+  const timeToMins = t => { if(!t||t==="0") return 0; const p=String(t).split(":").map(Number); return p.length===2?p[0]*60+p[1]:p[0]*60; };
+  const timeToHrs = t => timeToMins(t)/60;
+
+  const handleSave = async () => {
+    await onSave({
+      date:today, period:"midday", submitted:true,
+      clarity, screenTime, screenTimeHrs:timeToHrs(screenTime),
+      mood, rumination, upskillTime, upskillHrs:timeToHrs(upskillTime),
+    });
+    setSubmitted(true);
+  };
+
+  if (submitted) return (
+    <div className="scroll" style={{padding:"52px 16px 16px",textAlign:"center"}}>
+      <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
+      <div style={{padding:"40px 0"}}>
+        <div style={{fontFamily:"var(--serif)",fontSize:28,marginBottom:10,color:"var(--ink)"}}>☀️ Logged.</div>
+        <div style={{fontSize:14,color:"var(--muted)",marginBottom:24}}>Midday captured. Evening check-in opens at 8pm.</div>
+        <button style={{background:"var(--accent)",color:"#fff",padding:"12px 28px",borderRadius:"var(--r)",fontSize:14}} onClick={goHome}>Back to dashboard</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="scroll" style={{padding:"0 0 16px"}}>
+      <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
+      <div style={{padding:"0 16px 8px"}}>
+        <div style={{fontFamily:"var(--serif)",fontSize:20,marginBottom:2}}>☀️ Midday check-in</div>
+        <div style={{fontSize:12,color:"var(--muted)"}}>Focus + drift check · 60 seconds</div>
+      </div>
+      <div className="section">
+        <div className="ci-block">
+          <ScalePickerField label="Mental clarity right now" val={clarity} setVal={setClarity} low="Noise everywhere" high="Laser clarity"/>
+          <BucketPickerField label="Screen time so far" target="Target: under 2 hrs total"
+            val={screenTime} setVal={setScreenTime} color="var(--accent)"
+            buckets={[{v:"0",l:"None"},{v:"0:30",l:"30 min"},{v:"1:00",l:"1 hr"},{v:"2:00",l:"2 hrs"},{v:"3:00",l:"3 hrs"},{v:"5:00",l:"5 hrs+"}]}/>
+          <ScalePickerField label="Overall mood" val={mood} setVal={setMood} low="Hollow" high="Invested"/>
+          <ScalePickerField label="Rumination level" val={rumination} setVal={setRumination} low="Quiet mind" high="Consumed"/>
+          <BucketPickerField label="Upskill time so far" target="Weekdays: 2 hrs total"
+            val={upskillTime} setVal={setUpskillTime} color="var(--purple)"
+            buckets={[{v:"0",l:"None"},{v:"0:30",l:"30 min"},{v:"1:00",l:"1 hr"},{v:"2:00",l:"2 hrs"},{v:"4:00",l:"4 hrs"},{v:"6:00",l:"6 hrs+"}]}/>
+        </div>
+      </div>
+      <button className="submit-btn" onClick={handleSave}>Log midday →</button>
+    </div>
+  );
+}
+
+// Standalone field components for morning/midday (avoid stale closure issues)
+function SleepBucketField({val, setVal}) {
+  const buckets = [{id:"under-5",label:"< 5h"},{id:"5-6",label:"5–6h"},{id:"6-7",label:"6–7h"},{id:"7-8",label:"7–8h"},{id:"8-9",label:"8–9h"},{id:"9+",label:"9h+"}];
+  return (
+    <div className="ci-row">
+      <div className="ci-q" style={{marginBottom:10}}><span>Sleep last night</span></div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
+        {buckets.map(b=>(
+          <div key={b.id} onClick={()=>setVal(b.id)} style={{
+            padding:"10px 4px",borderRadius:"var(--r2)",textAlign:"center",fontSize:13,fontWeight:500,cursor:"pointer",transition:"all .15s",
+            background:val===b.id?"var(--teal)":"var(--bg3)",color:val===b.id?"#fff":"var(--muted)",
+            border:`0.5px solid ${val===b.id?"var(--teal)":"var(--border2)"}`,
+          }}>{b.label}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+function TimePickerField({label, val, setVal, hint}) {
+  return (
+    <div className="ci-row">
+      <div className="ci-q" style={{marginBottom:8}}><span>{label}</span>{hint&&<span style={{fontSize:10,color:"var(--muted)",marginLeft:6}}>{hint}</span>}</div>
+      <input type="time" value={val} onChange={e=>setVal(e.target.value)}
+        style={{width:"100%",padding:"11px 14px",fontSize:16,borderRadius:"var(--r2)",background:"var(--bg3)",border:"0.5px solid var(--border2)",color:"var(--ink)"}}/>
+    </div>
+  );
+}
+function ScalePickerField({label, val, setVal, low, high}) {
+  return (
+    <div className="ci-row">
+      <div className="ci-q" style={{marginBottom:10}}><span>{label}</span></div>
+      <div style={{display:"flex",gap:6}}>
+        {[1,2,3,4,5].map(n=>(
+          <div key={n} onClick={()=>setVal(n)} style={{
+            flex:1,padding:"10px 0",borderRadius:"var(--r2)",textAlign:"center",fontSize:13,fontWeight:500,cursor:"pointer",transition:"all .15s",
+            background:val===n?"var(--accent)":"var(--bg3)",color:val===n?"#fff":"var(--muted)",
+            border:`0.5px solid ${val===n?"var(--accent)":"var(--border2)"}`,
+          }}>{n}</div>
+        ))}
+      </div>
+      <div className="ci-ends" style={{marginTop:5}}><span className="ci-end">{low}</span><span className="ci-end">{high}</span></div>
+    </div>
+  );
+}
+function BucketPickerField({label, target, val, setVal, buckets, color}) {
+  return (
+    <div className="ci-row">
+      <div className="ci-q" style={{marginBottom:6,flexDirection:"column",alignItems:"flex-start",gap:2}}>
+        <span>{label}</span><span style={{fontSize:10,color:"var(--teal)",fontWeight:500}}>{target}</span>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
+        {buckets.map(b=>(
+          <div key={b.v} onClick={()=>setVal(b.v)} style={{
+            padding:"10px 4px",borderRadius:"var(--r2)",textAlign:"center",fontSize:12,fontWeight:500,cursor:"pointer",transition:"all .15s",
+            background:val===b.v?color:"var(--bg3)",color:val===b.v?"#fff":"var(--muted)",
+            border:`0.5px solid ${val===b.v?color:"var(--border2)"}`,
+          }}>{b.l}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+function YesNoField({val, setVal}) {
+  return (
+    <div className="toggle-row">
+      <div className={`tog ${val===true?"on":""}`} onClick={()=>setVal(true)}>Yes</div>
+      <div className={`tog ${val===false&&val!==null?"off":""}`} onClick={()=>setVal(false)}>No</div>
+    </div>
+  );
+}
+
+/* ─── EVENING FORM (full check-in) ──────────────────────────────── */
+function EveningForm({ entries, onSave, goHome, activePeriod, setActivePeriod, todayPeriods }) {
+
+  // Level selector — only for evening
+  const recentDates = [...new Set(entries.map(e=>e.date))].sort().slice(-3);
+  const recentMerged = recentDates.map(d=>mergeDayEntries(getDayEntries(entries,d))).filter(Boolean);
+  const avgRecentDrain = recentMerged.length
+    ? Math.round(recentMerged.map(e=>scoreDrain(e,entries)).reduce((a,b)=>a+b,0)/recentMerged.length)
     : 0;
-  const suggestedLevel = avgRecentDrain >= 41 ? 3 : existing.submitted ? 2 : 1;
-  const [level, setLevel] = useState(existing.checkInLevel || suggestedLevel);
+  const suggestedLevel = avgRecentDrain >= 41 ? 3 : 2;
+  const [level, setLevel] = useState(suggestedLevel);
 
   // Physical
-  const [workoutMins, setWorkoutMins] = useState(existing.workoutMins??0);
-  const [sleepBucket, setSleepBucket] = useState(existing.sleepBucket??"7-8");
-  const [bedtime, setBedtime] = useState(existing.bedtime??"23:00");
-  const [energy, setEnergy] = useState(existing.energy??3);
-  const [sunlight, setSunlight] = useState(existing.sunlight??null);
-  const [mealBefore2, setMealBefore2] = useState(existing.mealBefore2??null);
-  const [caffeineCups, setCaffeineCups] = useState(existing.caffeineCups??2);
+  const [workoutMins, setWorkoutMins] = useState(0);
+  const [sleepBucket, setSleepBucket] = useState("7-8");
+  const [bedtime, setBedtime] = useState("23:00");
+  const [energy, setEnergy] = useState(3);
+  const [sunlight, setSunlight] = useState(null);
+  const [mealBefore2, setMealBefore2] = useState(null);
+  const [caffeineCups, setCaffeineCups] = useState(2);
 
   // Mental
-  const [upskillTime, setUpskillTime] = useState(existing.upskillTime??"00:00");
-  const [clarity, setClarity] = useState(existing.clarity??3);
-  const [screenTime, setScreenTime] = useState(existing.screenTime??"00:00");
-  const [sideHustle, setSideHustle] = useState(existing.sideHustle??"none");
-  const [hobbyTime, setHobbyTime] = useState(existing.hobbyTime??existing.chessTime??"0");
-  const [pagesRead, setPagesRead] = useState(existing.pagesRead??0);
+  const [upskillTime, setUpskillTime] = useState("0");
+  const [clarity, setClarity] = useState(3);
+  const [screenTime, setScreenTime] = useState("0");
+  const [sideHustle, setSideHustle] = useState("none");
+  const [hobbyTime, setHobbyTime] = useState("0");
+  const [pagesRead, setPagesRead] = useState(0);
 
   // Emotional
-  const [meditationMins, setMeditationMins] = useState(existing.meditationMins??0);
-  const [mood, setMood] = useState(existing.mood??3);
-  const [familyContact, setFamilyContact] = useState(existing.familyContact??"none");
-  const [contactQuality, setContactQuality] = useState(existing.contactQuality??false);
-  const [meaning, setMeaning] = useState(existing.meaning??null);
-  const [enjoyable, setEnjoyable] = useState(existing.enjoyable??null);
-  const [gratitude, setGratitude] = useState(existing.gratitude??"");
+  const [meditationMins, setMeditationMins] = useState(0);
+  const [mood, setMood] = useState(3);
+  const [familyContact, setFamilyContact] = useState("none");
+  const [contactQuality, setContactQuality] = useState(false);
+  const [meaning, setMeaning] = useState(null);
+  const [enjoyable, setEnjoyable] = useState(null);
+  const [gratitude, setGratitude] = useState("");
 
   // Drains
-  const [cigarettes, setCigarettes] = useState(existing.cigarettes??0);
-  const [alcohol, setAlcohol] = useState(existing.alcohol??0);
-  const [sugarDay, setSugarDay] = useState(existing.sugarDay??false);
-  const [junkDinner, setJunkDinner] = useState(existing.junkDinner??false);
-  const [hydrated, setHydrated] = useState(existing.hydrated??true);
-  const [timeWasted, setTimeWasted] = useState(existing.timeWasted??0);
-  const [rumination, setRumination] = useState(existing.rumination??1);
-  const [negativeSelfTalk, setNegativeSelfTalk] = useState(existing.negativeSelfTalk??false);
-  const [socialMediaTime, setSocialMediaTime] = useState(existing.socialMediaTime??"00:00");
-  const [masturbation, setMasturbation] = useState(existing.masturbation??false);
-  const [lateNightPhone, setLateNightPhone] = useState(existing.lateNightPhone??false);
-  const [reactivity, setReactivity] = useState(existing.reactivity??false);
+  const [cigarettes, setCigarettes] = useState(0);
+  const [alcohol, setAlcohol] = useState(0);
+  const [sugarDay, setSugarDay] = useState(false);
+  const [junkDinner, setJunkDinner] = useState(false);
+  const [hydrated, setHydrated] = useState(true);
+  const [timeWasted, setTimeWasted] = useState(0);
+  const [rumination, setRumination] = useState(1);
+  const [negativeSelfTalk, setNegativeSelfTalk] = useState(false);
+  const [socialMediaTime, setSocialMediaTime] = useState("0");
+  const [masturbation, setMasturbation] = useState(false);
+  const [lateNightPhone, setLateNightPhone] = useState(false);
+  const [reactivity, setReactivity] = useState(false);
+
+  // Re-populate from any existing evening entry
+  const today = TODAY();
+  const existingEvening = getDayEntries(entries, today).evening || {};
 
   // Derive numeric values from time/bucket strings for scoring
   const timeToMins = t => {
@@ -577,7 +920,7 @@ function CheckIn({ entries, onSave, goHome }) {
 
   const handleSave = async () => {
     const entry = {
-      date: today, submitted: true, checkInLevel: level,
+      date: today, period: "evening", submitted: true, checkInLevel: level,
       workoutMins,
       sleepBucket, sleepHrs: sleepBucketToHrs(sleepBucket),
       bedtime, bedtimeHr: bedtimeToHr(bedtime),
@@ -769,46 +1112,39 @@ function CheckIn({ entries, onSave, goHome }) {
 
   if (submitted) {
     return (
-      <div className="scroll" style={{padding:"52px 16px 16px"}}>
-        <div style={{textAlign:"center",padding:"60px 0"}}>
-          <div style={{fontFamily:"var(--serif)",fontSize:28,marginBottom:10,color:"var(--ink)"}}>Done for today.</div>
-          <div style={{fontSize:14,color:"var(--muted)",lineHeight:1.6,marginBottom:24}}>Your data is saved. Come back tomorrow.</div>
-          <button style={{background:"var(--accent)",color:"#fff",padding:"12px 28px",borderRadius:"var(--r)",fontSize:14}} onClick={()=>setSubmitted(false)}>Update today's entry</button>
+      <div className="scroll" style={{padding:"0 16px 16px"}}>
+        <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
+        <div style={{textAlign:"center",padding:"40px 0"}}>
+          <div style={{fontFamily:"var(--serif)",fontSize:28,marginBottom:10,color:"var(--ink)"}}>🌙 Day closed.</div>
+          <div style={{fontSize:14,color:"var(--muted)",lineHeight:1.6,marginBottom:24}}>See you tomorrow.</div>
+          <button style={{background:"var(--accent)",color:"#fff",padding:"12px 28px",borderRadius:"var(--r)",fontSize:14}} onClick={goHome}>Back to dashboard</button>
         </div>
       </div>
     );
   }
 
-  // ── Level selector header ─────────────────────────────────────
-  const LevelHeader = () => (
-    <div style={{padding:"52px 16px 0"}}>
-      <div style={{fontFamily:"var(--serif)",fontSize:22,marginBottom:4}}>
-        {level===1 ? "Morning pulse" : level===2 ? "Daily check-in" : "Deep audit"}
+  // Evening level header
+  const EveningHeader = () => (
+    <div style={{padding:"0 16px 0"}}>
+      <div style={{fontFamily:"var(--serif)",fontSize:20,marginBottom:2}}>🌙 Evening check-in</div>
+      <div style={{fontSize:12,color:"var(--muted)",marginBottom:12}}>
+        {level===1?"5 signals · 60 seconds":level===2?"Core signals · 2-3 min":"Full picture · 5 min"}
       </div>
-      <div style={{fontSize:12,color:"var(--muted)",marginBottom:16}}>
-        {level===1 ? "5 signals · 60 seconds" : level===2 ? "Core signals · 2-3 minutes" : "Full picture · 5 minutes"}
-      </div>
-      {/* Level switcher */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:16}}>
-        {[
-          {l:1, label:"Pulse", sub:"60 sec"},
-          {l:2, label:"Check-in", sub:"2-3 min"},
-          {l:3, label:"Deep audit", sub:"5 min"},
-        ].map(({l,label,sub})=>(
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:14}}>
+        {[{l:1,label:"Pulse",sub:"60 sec"},{l:2,label:"Check-in",sub:"2-3 min"},{l:3,label:"Deep",sub:"5 min"}].map(({l,label,sub})=>(
           <div key={l} onClick={()=>setLevel(l)} style={{
-            padding:"10px 6px", borderRadius:"var(--r2)", textAlign:"center",
-            cursor:"pointer", transition:"all .15s",
-            background: level===l ? "var(--accent)" : "var(--bg2)",
-            border: `0.5px solid ${level===l ? "var(--accent)" : "var(--border)"}`,
+            padding:"8px 4px",borderRadius:"var(--r2)",textAlign:"center",cursor:"pointer",transition:"all .15s",
+            background:level===l?"var(--accent)":"var(--bg2)",
+            border:`0.5px solid ${level===l?"var(--accent)":"var(--border)"}`,
           }}>
-            <div style={{fontSize:12,fontWeight:500,color:level===l?"#fff":"var(--ink2)"}}>{label}</div>
-            <div style={{fontSize:10,color:level===l?"rgba(255,255,255,.7)":"var(--muted)",marginTop:2}}>{sub}</div>
+            <div style={{fontSize:11,fontWeight:500,color:level===l?"#fff":"var(--ink2)"}}>{label}</div>
+            <div style={{fontSize:9,color:level===l?"rgba(255,255,255,.7)":"var(--muted)",marginTop:1}}>{sub}</div>
           </div>
         ))}
       </div>
-      {level===3 && avgRecentDrain >= 41 && (
+      {level===3 && avgRecentDrain>=41 && (
         <div style={{background:"#2a1212",border:"0.5px solid #c8553d44",borderRadius:"var(--r2)",padding:"10px 12px",marginBottom:12,fontSize:12,color:"#c8553d",lineHeight:1.5}}>
-          ▽ Drain has been elevated for {recentEntries.length}+ days. Deep audit recommended.
+          ▽ Drain elevated recently. Deep audit recommended.
         </div>
       )}
     </div>
@@ -817,7 +1153,7 @@ function CheckIn({ entries, onSave, goHome }) {
   // ── LEVEL 1: PULSE ─────────────────────────────────────────────
   if (level === 1) return (
     <div className="scroll" style={{padding:"0 0 16px"}}>
-      <LevelHeader/>
+      <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/><EveningHeader/>
       <div className="section" style={{marginTop:8}}>
         <div className="ci-block">
           <SleepBucket val={sleepBucket} setVal={setSleepBucket}/>
@@ -844,7 +1180,7 @@ function CheckIn({ entries, onSave, goHome }) {
   // ── LEVEL 2: CORE CHECK-IN ─────────────────────────────────────
   if (level === 2) return (
     <div className="scroll" style={{padding:"0 0 16px"}}>
-      <LevelHeader/>
+      <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/><EveningHeader/>
       <div className="section" style={{marginTop:8}}>
         <div className="section-title">Physical</div>
         <div className="ci-block">
@@ -904,7 +1240,7 @@ function CheckIn({ entries, onSave, goHome }) {
   // ── LEVEL 3: DEEP AUDIT (full) ────────────────────────────────
   return (
     <div className="scroll" style={{padding:"0 0 16px"}}>
-      <LevelHeader/>
+      <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/><EveningHeader/>
 
       {/* PHYSICAL */}
       <div className="section" style={{marginTop:8}}>
@@ -1271,44 +1607,65 @@ function getRecommendations(todayEntry, allEntries, pScore, mScore, eScore, dSco
 /* ─── DASHBOARD ─────────────────────────────────────────────────── */
 function Dashboard({ entries, profile, setTab, icp }) {
   const today = TODAY();
-  const todayEntry = entries.find(e=>e.date===today);
-  const recentEntries = entries.slice(-14);
+
+  // Merge today's periods into one scoring object
+  const todayPeriods = getDayEntries(entries, today);
+  const todayEntry = mergeDayEntries(todayPeriods);
+  const recentDates = [...new Set(entries.map(e=>e.date))].sort().slice(-14);
+  const recentEntries = recentDates.map(d => mergeDayEntries(getDayEntries(entries, d))).filter(Boolean);
 
   const pScore = todayEntry ? scorePhysical(todayEntry, recentEntries) : null;
   const mScore = todayEntry ? scoreMental(todayEntry) : null;
   const eScore = todayEntry ? scoreEmotional(todayEntry, recentEntries) : null;
   const dScore = todayEntry ? scoreDrain(todayEntry, recentEntries) : null;
-  const dInfo = dScore !== null ? drainLabel(dScore) : null;
+  const dInfo  = dScore !== null ? drainLabel(dScore) : null;
+
+  // If no merged today entry but there are legacy entries for today, use them directly
+  const legacyToday = !todayEntry ? entries.find(e => e.date === today) : null;
+  const effectiveTodayEntry = todayEntry || legacyToday;
+  const effectivePScore = effectiveTodayEntry && !todayEntry ? scorePhysical(effectiveTodayEntry, entries) : pScore;
+  const effectiveMScore = effectiveTodayEntry && !todayEntry ? scoreMental(effectiveTodayEntry) : mScore;
+  const effectiveEScore = effectiveTodayEntry && !todayEntry ? scoreEmotional(effectiveTodayEntry, entries) : eScore;
+  const effectiveDScore = effectiveTodayEntry && !todayEntry ? scoreDrain(effectiveTodayEntry, entries) : dScore;
+  const effectiveDInfo  = effectiveDScore !== null ? drainLabel(effectiveDScore) : null;
+
+  // Period completion status for today
+  const currentPeriod = getCurrentPeriod();
+  const periodsDone = {
+    morning: !!todayPeriods.morning,
+    midday:  !!todayPeriods.midday,
+    evening: !!todayPeriods.evening,
+  };
 
   // build last 7 days
   const last7 = Array.from({length:7},(_,i)=>{
     const d = new Date(); d.setDate(d.getDate()-(6-i));
     const key = d.toISOString().split("T")[0];
-    const entry = entries.find(e=>e.date===key);
-    const ps = entry ? scorePhysical(entry,entries) : null;
-    const ms = entry ? scoreMental(entry) : null;
-    const es = entry ? scoreEmotional(entry,entries) : null;
+    const merged = mergeDayEntries(getDayEntries(entries, key));
+    const ps = merged ? scorePhysical(merged, recentEntries) : null;
+    const ms = merged ? scoreMental(merged) : null;
+    const es = merged ? scoreEmotional(merged, recentEntries) : null;
     const avg = ps!==null ? Math.round((ps+ms+es)/3) : null;
     return { key, day: DAYS[d.getDay()], avg, isToday: key===today };
   });
 
   // signals
   const signals = [];
-  if (todayEntry) {
-    if (dScore >= 41) signals.push({color:"#c8553d", text:`Drain is heavy today (${dScore}/100). Multiple drains compounding.`});
-    else if (dScore >= 16) signals.push({color:"#c4840a", text:`Leaking today — drain score ${dScore}. Check what's pulling you down.`});
-    if (mScore < 50) signals.push({color:"#c8553d", text:`Mental score is ${mScore}%. Screen time or upskilling gap is the likely cause.`});
-    if (!todayEntry.familyContact || todayEntry.familyContact==="none") {
+  if (effectiveTodayEntry) {
+    if (effectiveDScore >= 41) signals.push({color:"#c8553d", text:`Drain is heavy today (${dScore}/100). Multiple drains compounding.`});
+    else if (effectiveDScore >= 16) signals.push({color:"#c4840a", text:`Leaking today — drain score ${effectiveDScore}. Check what's pulling you down.`});
+    if (effectiveMScore < 50) signals.push({color:"#c8553d", text:`Mental score is ${effectiveMScore}%. Screen time or upskilling gap is the likely cause.`});
+    if (!effectiveTodayEntry.familyContact || effectiveTodayEntry.familyContact==="none") {
       const streak = recentEntries.filter(e=>!e.familyContact||e.familyContact==="none").length;
       if (streak>=3) signals.push({color:"#c8553d", text:`${streak} days without a genuine conversation with someone you love. Isolation pattern building.`});
     }
-    if (pScore >= 80) signals.push({color:"#3d8c6c", text:`Strong physical day. Body is doing its job.`});
-    if (eScore >= 80) signals.push({color:"#3d8c6c", text:`Emotional baseline is solid at ${eScore}%.`});
-    if ((todayEntry.upskillHrs||0) >= 2) signals.push({color:"#3d8c6c", text:`Upskilling target hit. Forward motion is real.`});
+    if (effectivePScore >= 80) signals.push({color:"#3d8c6c", text:`Strong physical day. Body is doing its job.`});
+    if (effectiveEScore >= 80) signals.push({color:"#3d8c6c", text:`Emotional baseline is solid at ${effectiveEScore}%.`});
+    if ((effectiveTodayEntry.upskillHrs||0) >= 2) signals.push({color:"#3d8c6c", text:`Upskilling target hit. Forward motion is real.`});
   }
-  if (!signals.length && !todayEntry) signals.push({color:"#7a7268", text:"No check-in yet today. Tap the + tab to log your day."});
+  if (!signals.length && !effectiveTodayEntry) signals.push({color:"#7a7268", text:"No check-in yet today. Tap the + tab to log your day."});
 
-  const recs = getRecommendations(todayEntry, recentEntries, pScore, mScore, eScore, dScore, icp);
+  const recs = getRecommendations(effectiveTodayEntry || todayEntry, recentEntries, effectivePScore, effectiveMScore, effectiveEScore, effectiveDScore, icp);
 
   const firstName = (profile?.name||"there").split(" ")[0];
   const initials = getInitials(profile?.name||"S");
@@ -1317,9 +1674,10 @@ function Dashboard({ entries, profile, setTab, icp }) {
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
   // ICP context — what they said they're working on
-  const goalLabels = { momentum:"consistent momentum", drain:"reducing cognitive drain", patterns:"understanding your patterns", physical:"your physical baseline", focus_deep:"deep focus" };
+  const goalLabels = { momentum:"consistent momentum", drain:"reducing cognitive drain", patterns:"understanding patterns", physical:"physical baseline", focus_deep:"deep focus" };
   const goalText = icp?.goals?.length
-    ? icp.goals.map(g=>goalLabels[g]).filter(Boolean).join(" · ")
+    ? icp.goals.length >= 4 ? "building your personal operating system"
+      : icp.goals.map(g=>goalLabels[g]).filter(Boolean).join(" · ")
     : null;
 
   return (
@@ -1343,9 +1701,9 @@ function Dashboard({ entries, profile, setTab, icp }) {
       {/* RINGS */}
       <div className="rings-row fade-up" style={{animationDelay:".05s"}}>
         {[
-          {label:"Physical", score:pScore, color:"#1d9e75"},
-          {label:"Mental",   score:mScore, color:"#7f77dd"},
-          {label:"Emotional",score:eScore, color:"#c4840a"},
+          {label:"Physical", score:effectivePScore, color:"#1d9e75"},
+          {label:"Mental",   score:effectiveMScore, color:"#7f77dd"},
+          {label:"Emotional",score:effectiveEScore, color:"#c4840a"},
         ].map(({label,score,color})=>(
           <div className="ring-card" key={label}>
             <div className="ring-name">{label}</div>
@@ -1361,15 +1719,15 @@ function Dashboard({ entries, profile, setTab, icp }) {
       </div>
 
       {/* DRAIN CARD */}
-      {dScore!==null && (
+      {effectiveDScore!==null && (
         <div className="drain-card fade-up" style={{animationDelay:".1s"}}>
           <div>
             <div className="drain-label">Drain</div>
-            <div className="drain-score" style={{color:dInfo.color}}>{dScore}</div>
-            <div style={{fontSize:11,color:dInfo.color,fontWeight:500}}>{dInfo.label}</div>
+            <div className="drain-score" style={{color:effectiveDInfo.color}}>{ effectiveDScore}</div>
+            <div style={{fontSize:11,color:effectiveDInfo.color,fontWeight:500}}>{effectiveDInfo.label}</div>
           </div>
           <div className="drain-bar-bg">
-            <div className="drain-bar" style={{width:`${dScore}%`,background:dInfo.color}}/>
+            <div className="drain-bar" style={{width:`${dScore}%`,background:effectiveDInfo.color}}/>
           </div>
           <div style={{textAlign:"right"}}>
             <div style={{fontSize:10,color:"var(--muted)",marginBottom:2}}>out of</div>
@@ -1378,13 +1736,36 @@ function Dashboard({ entries, profile, setTab, icp }) {
         </div>
       )}
 
-      {/* CHECK-IN PROMPT */}
-      {!todayEntry && (
+      {/* PERIOD STATUS STRIP */}
+      <div style={{margin:"10px 16px 0",display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}} className="fade-up">
+        {Object.entries(PERIODS).map(([id, p]) => {
+          const done = periodsDone[id];
+          const active = currentPeriod === id;
+          return (
+            <div key={id} onClick={()=>!done && setTab("checkin")} style={{
+              padding:"10px 8px", borderRadius:"var(--r2)", textAlign:"center",
+              cursor: done ? "default" : "pointer",
+              background: done ? "#0f2a1a" : active ? "#1a1208" : "var(--bg2)",
+              border: `0.5px solid ${done ? "#1d9e7566" : active ? "var(--accent)" : "var(--border)"}`,
+              transition:"all .2s",
+            }}>
+              <div style={{fontSize:16,marginBottom:3}}>{p.icon}</div>
+              <div style={{fontSize:11,fontWeight:500,color: done ? "#3d8c6c" : active ? "var(--accent)" : "var(--muted)"}}>{p.label}</div>
+              <div style={{fontSize:10,color: done ? "#3d8c6c" : active ? "var(--accent)" : "var(--muted)",marginTop:2}}>
+                {done ? "✓ Done" : active ? "Open now" : `${p.hours[0]}–${p.hours[1]}h`}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* CHECK-IN PROMPT — only show if current period not done */}
+      {currentPeriod && !periodsDone[currentPeriod] && (
         <div style={{margin:"10px 16px 0"}} className="fade-up">
           <div style={{background:"var(--accent)",borderRadius:"var(--r)",padding:16,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}} onClick={()=>setTab("checkin")}>
             <div>
-              <div style={{fontSize:14,fontWeight:500,color:"#fff"}}>Check in for today</div>
-              <div style={{fontSize:12,color:"rgba(255,255,255,.6)",marginTop:2}}>Under 3 minutes</div>
+              <div style={{fontSize:14,fontWeight:500,color:"#fff"}}>{PERIODS[currentPeriod].icon} {PERIODS[currentPeriod].label} check-in open</div>
+              <div style={{fontSize:12,color:"rgba(255,255,255,.6)",marginTop:2}}>Under 2 minutes</div>
             </div>
             <div style={{fontSize:24,color:"rgba(255,255,255,.8)"}}>→</div>
           </div>
@@ -1640,6 +2021,68 @@ function History({ entries }) {
 
 /* ─── PROFILE ───────────────────────────────────────────────────── */
 function Profile({ profile, entries, onEdit }) {
+  const [notifEnabled, setNotifEnabled] = useState(
+    localStorage.getItem("healthish:notif") === "granted"
+  );
+  const [backupMsg, setBackupMsg] = useState(null);
+  const importRef = useRef(null);
+
+  const handleEnableNotif = async () => {
+    try {
+      await requestNotificationPermission();
+      localStorage.setItem("healthish:notif", "granted");
+      setNotifEnabled(true);
+    } catch(e) {
+      console.log("notif error", e);
+    }
+  };
+
+  // ── Export ──────────────────────────────────────────────────────
+  const handleExport = () => {
+    const backup = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      data: {}
+    };
+    Object.values(KEYS).forEach(k => {
+      const v = localStorage.getItem(k);
+      if (v) backup.data[k] = JSON.parse(v);
+    });
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = `healthish-backup-${TODAY()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setBackupMsg("✓ Backup downloaded. Save it to Files or iCloud.");
+    setTimeout(() => setBackupMsg(null), 4000);
+  };
+
+  // ── Import ──────────────────────────────────────────────────────
+  const handleImport = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const backup = JSON.parse(ev.target.result);
+        if (!backup.version || !backup.data) {
+          setBackupMsg("✗ Invalid backup file.");
+          return;
+        }
+        Object.entries(backup.data).forEach(([k, v]) => {
+          localStorage.setItem(k, JSON.stringify(v));
+        });
+        setBackupMsg("✓ Data restored. Reloading...");
+        setTimeout(() => window.location.reload(), 1200);
+      } catch {
+        setBackupMsg("✗ Could not read file. Make sure it's a HealthIsh backup.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
   const bmi = profile?.weight && profile?.height
     ? (profile.weight / Math.pow(profile.height/100, 2)).toFixed(1)
     : null;
@@ -1704,6 +2147,35 @@ function Profile({ profile, entries, onEdit }) {
       </div>
 
       <div className="section" style={{marginTop:16}}>
+        <div className="section-title">Notifications</div>
+        <div className="card">
+          <div style={{fontSize:13,color:"var(--ink2)",lineHeight:1.6,marginBottom:12}}>
+            Get reminded to check in 3 times a day — morning (8am), midday (2pm), and evening (9pm).
+          </div>
+          {notifEnabled ? (
+            <div style={{
+              width:"100%", padding:12, borderRadius:"var(--r2)",
+              background:"#0f2a1a", border:"0.5px solid #1d9e7566",
+              fontSize:13, fontWeight:500, color:"#3d8c6c", textAlign:"center",
+            }}>
+              ✓ Check-in reminders enabled
+            </div>
+          ) : (
+            <button onClick={handleEnableNotif} style={{
+              width:"100%", padding:12, borderRadius:"var(--r2)",
+              background:"var(--accent)", color:"#fff",
+              fontSize:13, fontWeight:500,
+            }}>
+              Enable check-in reminders
+            </button>
+          )}
+          <div style={{fontSize:11,color:"var(--muted)",marginTop:8,lineHeight:1.5,textAlign:"center"}}>
+            You can turn these off anytime in your phone settings
+          </div>
+        </div>
+      </div>
+
+      <div className="section" style={{marginTop:16}}>
         <div className="section-title">Tracking</div>
         <div className="card">
           {[
@@ -1716,6 +2188,48 @@ function Profile({ profile, entries, onEdit }) {
               <span className="p-val" style={k==="Baseline status"&&entries.length>=7?{color:"var(--teal)"}:{}}>{v}</span>
             </div>
           ))}
+        </div>
+      </div>
+
+      <div className="section" style={{marginTop:16}}>
+        <div className="section-title">Backup & restore</div>
+        <div className="card">
+          <div style={{fontSize:13,color:"var(--ink2)",lineHeight:1.6,marginBottom:14}}>
+            Export your data as a file. If you ever reinstall the app, import it to restore everything instantly.
+          </div>
+          {backupMsg && (
+            <div style={{
+              padding:"10px 12px", borderRadius:"var(--r2)", marginBottom:12,
+              background: backupMsg.startsWith("✓") ? "#0f2a1a" : "#2a0f0f",
+              border: `0.5px solid ${backupMsg.startsWith("✓") ? "#1d9e7566" : "#c8553d66"}`,
+              fontSize:13, color: backupMsg.startsWith("✓") ? "#3d8c6c" : "#c8553d",
+            }}>{backupMsg}</div>
+          )}
+          <button onClick={handleExport} style={{
+            width:"100%", padding:12, borderRadius:"var(--r2)",
+            background:"var(--teal)", color:"#fff",
+            fontSize:13, fontWeight:500, marginBottom:10,
+          }}>
+            ↓ Export backup
+          </button>
+          <button onClick={()=>importRef.current?.click()} style={{
+            width:"100%", padding:12, borderRadius:"var(--r2)",
+            background:"var(--bg3)", color:"var(--ink2)",
+            border:"0.5px solid var(--border2)",
+            fontSize:13, fontWeight:500,
+          }}>
+            ↑ Import backup
+          </button>
+          <input
+            ref={importRef}
+            type="file"
+            accept=".json"
+            style={{display:"none"}}
+            onChange={handleImport}
+          />
+          <div style={{fontSize:11,color:"var(--muted)",marginTop:8,lineHeight:1.5,textAlign:"center"}}>
+            Backup includes all check-ins, profile, goals and settings
+          </div>
         </div>
       </div>
 
@@ -2217,13 +2731,27 @@ export default function HealthIsh() {
     (async()=>{
       const ob = await storageGet(KEYS.onboarded);
       const pr = await storageGet(KEYS.profile);
-      const en = await storageGet(KEYS.entries);
       const ic = await storageGet(KEYS.icp);
+      let en = await storageGet(KEYS.entries) || [];
+
+      // Migrate: any entry without a period field gets tagged as "evening"
+      let needsSave = false;
+      en = en.map(e => {
+        if (!e.period) { needsSave = true; return { ...e, period: "evening" }; }
+        return e;
+      });
+      if (needsSave) await storageSet(KEYS.entries, en);
+
       setOnboarded(!!ob);
       setProfile(pr||null);
-      setEntries(en||[]);
-      setIcp(ic||null); // null = not completed yet
+      setEntries(en);
+      setIcp(ic||null);
     })();
+
+    // Initialise OneSignal after a short delay to let SDK load
+    setTimeout(() => {
+      initOneSignal();
+    }, 1500);
   },[]);
 
   const handleOnboard = async (pr) => {
@@ -2232,8 +2760,16 @@ export default function HealthIsh() {
   };
 
   const handleSaveEntry = async (entry) => {
-    const updated = [...entries.filter(e=>e.date!==entry.date), entry]
-      .sort((a,b)=>a.date.localeCompare(b.date));
+    // Filter by both date AND period so periods don't overwrite each other
+    const updated = [
+      ...entries.filter(e => !(e.date === entry.date && e.period === entry.period)),
+      entry,
+    ].sort((a,b) => {
+      const dateCompare = a.date.localeCompare(b.date);
+      if (dateCompare !== 0) return dateCompare;
+      const order = { morning:0, midday:1, evening:2 };
+      return (order[a.period]??0) - (order[b.period]??0);
+    });
     setEntries(updated);
     await storageSet(KEYS.entries, updated);
   };
