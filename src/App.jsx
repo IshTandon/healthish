@@ -616,10 +616,241 @@ function CheckIn({ entries, onSave, goHome }) {
   const today = TODAY();
   const currentPeriod = getCurrentPeriod();
   const todayPeriods = getDayEntries(entries, today);
-
   const [activePeriod, setActivePeriod] = useState(currentPeriod || "evening");
-  const [submitted, setSubmitted] = useState(false);
-  const [isResetting, setIsResetting] = useState(false);
+
+  // Period tab header — shown on all period forms
+  const PeriodTabs = () => (
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:16,padding:"52px 16px 0"}}>
+      {Object.entries(PERIODS).map(([id, p]) => {
+        const done = !!todayPeriods[id];
+        const isActive = activePeriod === id;
+        return (
+          <div key={id} onClick={()=>setActivePeriod(id)} style={{
+            padding:"9px 4px", borderRadius:"var(--r2)", textAlign:"center",
+            cursor:"pointer", transition:"all .15s",
+            background: isActive ? "var(--bg3)" : "var(--bg2)",
+            border: `0.5px solid ${isActive ? "var(--accent)" : done ? "#1d9e7544" : "var(--border)"}`,
+          }}>
+            <div style={{fontSize:13}}>{p.icon}</div>
+            <div style={{fontSize:10,fontWeight:500,marginTop:2,color:isActive?"var(--accent)":done?"#3d8c6c":"var(--muted)"}}>{p.label}</div>
+            {done && <div style={{fontSize:9,color:"#3d8c6c"}}>✓</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  // Use React key to fully remount the form when period changes
+  // This avoids all stale state issues — each period gets a fresh component
+  return (
+    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minHeight:0}}>
+      {activePeriod === "morning" && (
+        <MorningForm key="morning" entries={entries} onSave={onSave} goHome={goHome} PeriodTabs={PeriodTabs}/>
+      )}
+      {activePeriod === "midday" && (
+        <MiddayForm key="midday" entries={entries} onSave={onSave} goHome={goHome} PeriodTabs={PeriodTabs}/>
+      )}
+      {activePeriod === "evening" && (
+        <EveningForm key="evening" entries={entries} onSave={onSave} goHome={goHome} PeriodTabs={PeriodTabs}/>
+      )}
+    </div>
+  );
+}
+
+/* ─── MORNING FORM ───────────────────────────────────────────────── */
+function MorningForm({ entries, onSave, goHome, PeriodTabs }) {
+  const today = TODAY();
+  const existing = getDayEntries(entries, today).morning || {};
+  const [submitted, setSubmitted] = useState(!!existing.submitted);
+  const [sleepBucket, setSleepBucket] = useState(existing.sleepBucket ?? "7-8");
+  const [bedtime, setBedtime] = useState(existing.bedtime ?? "23:00");
+  const [energy, setEnergy] = useState(existing.energy ?? 3);
+  const [sunlight, setSunlight] = useState(existing.sunlight ?? null);
+  const [mealBefore2, setMealBefore2] = useState(existing.mealBefore2 ?? null);
+
+  const sleepBucketToHrs = b => ({"under-5":4,"5-6":5.5,"6-7":6.5,"7-8":7.5,"8-9":8.5,"9+":9.5}[b]??7.5);
+  const bedtimeToHr = t => { const [h] = (t||"23:00").split(":").map(Number); return h>=20?h:h+24; };
+
+  const handleSave = async () => {
+    await onSave({
+      date:today, period:"morning", submitted:true,
+      sleepBucket, sleepHrs:sleepBucketToHrs(sleepBucket),
+      bedtime, bedtimeHr:bedtimeToHr(bedtime),
+      energy, sunlight, mealBefore2,
+    });
+    setSubmitted(true);
+  };
+
+  if (submitted) return (
+    <div className="scroll" style={{padding:"52px 16px 16px",textAlign:"center"}}>
+      <PeriodTabs/>
+      <div style={{padding:"40px 0"}}>
+        <div style={{fontFamily:"var(--serif)",fontSize:28,marginBottom:10,color:"var(--ink)"}}>🌅 Logged.</div>
+        <div style={{fontSize:14,color:"var(--muted)",marginBottom:24}}>Morning captured. Check back at 2pm.</div>
+        <button style={{background:"var(--accent)",color:"#fff",padding:"12px 28px",borderRadius:"var(--r)",fontSize:14}} onClick={goHome}>Back to dashboard</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="scroll" style={{padding:"0 0 16px"}}>
+      <PeriodTabs/>
+      <div style={{padding:"0 16px 8px"}}>
+        <div style={{fontFamily:"var(--serif)",fontSize:20,marginBottom:2}}>🌅 Morning check-in</div>
+        <div style={{fontSize:12,color:"var(--muted)"}}>Sleep + energy · 60 seconds</div>
+      </div>
+      <div className="section">
+        <div className="ci-block">
+          <SleepBucketField val={sleepBucket} setVal={setSleepBucket}/>
+          <TimePickerField label="Bedtime last night" val={bedtime} setVal={setBedtime} hint="when you got into bed"/>
+          <ScalePickerField label="Physical energy right now" val={energy} setVal={setEnergy} low="Depleted" high="Fully charged"/>
+          <div className="ci-row">
+            <div className="ci-q"><span>Morning sunlight?</span></div>
+            <YesNoField val={sunlight} setVal={setSunlight}/>
+          </div>
+          <div className="ci-row">
+            <div className="ci-q"><span>First meal before 2pm planned?</span></div>
+            <YesNoField val={mealBefore2} setVal={setMealBefore2}/>
+          </div>
+        </div>
+      </div>
+      <button className="submit-btn" onClick={handleSave}>Log morning →</button>
+    </div>
+  );
+}
+
+/* ─── MIDDAY FORM ────────────────────────────────────────────────── */
+function MiddayForm({ entries, onSave, goHome, PeriodTabs }) {
+  const today = TODAY();
+  const existing = getDayEntries(entries, today).midday || {};
+  const [submitted, setSubmitted] = useState(!!existing.submitted);
+  const [clarity, setClarity] = useState(existing.clarity ?? 3);
+  const [screenTime, setScreenTime] = useState(existing.screenTime ?? "0");
+  const [mood, setMood] = useState(existing.mood ?? 3);
+  const [rumination, setRumination] = useState(existing.rumination ?? 1);
+  const [upskillTime, setUpskillTime] = useState(existing.upskillTime ?? "0");
+
+  const timeToMins = t => { if(!t||t==="0") return 0; const p=String(t).split(":").map(Number); return p.length===2?p[0]*60+p[1]:p[0]*60; };
+  const timeToHrs = t => timeToMins(t)/60;
+
+  const handleSave = async () => {
+    await onSave({
+      date:today, period:"midday", submitted:true,
+      clarity, screenTime, screenTimeHrs:timeToHrs(screenTime),
+      mood, rumination, upskillTime, upskillHrs:timeToHrs(upskillTime),
+    });
+    setSubmitted(true);
+  };
+
+  if (submitted) return (
+    <div className="scroll" style={{padding:"52px 16px 16px",textAlign:"center"}}>
+      <PeriodTabs/>
+      <div style={{padding:"40px 0"}}>
+        <div style={{fontFamily:"var(--serif)",fontSize:28,marginBottom:10,color:"var(--ink)"}}>☀️ Logged.</div>
+        <div style={{fontSize:14,color:"var(--muted)",marginBottom:24}}>Midday captured. Evening check-in opens at 8pm.</div>
+        <button style={{background:"var(--accent)",color:"#fff",padding:"12px 28px",borderRadius:"var(--r)",fontSize:14}} onClick={goHome}>Back to dashboard</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="scroll" style={{padding:"0 0 16px"}}>
+      <PeriodTabs/>
+      <div style={{padding:"0 16px 8px"}}>
+        <div style={{fontFamily:"var(--serif)",fontSize:20,marginBottom:2}}>☀️ Midday check-in</div>
+        <div style={{fontSize:12,color:"var(--muted)"}}>Focus + drift check · 60 seconds</div>
+      </div>
+      <div className="section">
+        <div className="ci-block">
+          <ScalePickerField label="Mental clarity right now" val={clarity} setVal={setClarity} low="Noise everywhere" high="Laser clarity"/>
+          <BucketPickerField label="Screen time so far" target="Target: under 2 hrs total"
+            val={screenTime} setVal={setScreenTime} color="var(--accent)"
+            buckets={[{v:"0",l:"None"},{v:"0:30",l:"30 min"},{v:"1:00",l:"1 hr"},{v:"2:00",l:"2 hrs"},{v:"3:00",l:"3 hrs"},{v:"5:00",l:"5 hrs+"}]}/>
+          <ScalePickerField label="Overall mood" val={mood} setVal={setMood} low="Hollow" high="Invested"/>
+          <ScalePickerField label="Rumination level" val={rumination} setVal={setRumination} low="Quiet mind" high="Consumed"/>
+          <BucketPickerField label="Upskill time so far" target="Weekdays: 2 hrs total"
+            val={upskillTime} setVal={setUpskillTime} color="var(--purple)"
+            buckets={[{v:"0",l:"None"},{v:"0:30",l:"30 min"},{v:"1:00",l:"1 hr"},{v:"2:00",l:"2 hrs"},{v:"4:00",l:"4 hrs"},{v:"6:00",l:"6 hrs+"}]}/>
+        </div>
+      </div>
+      <button className="submit-btn" onClick={handleSave}>Log midday →</button>
+    </div>
+  );
+}
+
+// Standalone field components for morning/midday (avoid stale closure issues)
+function SleepBucketField({val, setVal}) {
+  const buckets = [{id:"under-5",label:"< 5h"},{id:"5-6",label:"5–6h"},{id:"6-7",label:"6–7h"},{id:"7-8",label:"7–8h"},{id:"8-9",label:"8–9h"},{id:"9+",label:"9h+"}];
+  return (
+    <div className="ci-row">
+      <div className="ci-q" style={{marginBottom:10}}><span>Sleep last night</span></div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
+        {buckets.map(b=>(
+          <div key={b.id} onClick={()=>setVal(b.id)} style={{
+            padding:"10px 4px",borderRadius:"var(--r2)",textAlign:"center",fontSize:13,fontWeight:500,cursor:"pointer",transition:"all .15s",
+            background:val===b.id?"var(--teal)":"var(--bg3)",color:val===b.id?"#fff":"var(--muted)",
+            border:`0.5px solid ${val===b.id?"var(--teal)":"var(--border2)"}`,
+          }}>{b.label}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+function TimePickerField({label, val, setVal, hint}) {
+  return (
+    <div className="ci-row">
+      <div className="ci-q" style={{marginBottom:8}}><span>{label}</span>{hint&&<span style={{fontSize:10,color:"var(--muted)",marginLeft:6}}>{hint}</span>}</div>
+      <input type="time" value={val} onChange={e=>setVal(e.target.value)}
+        style={{width:"100%",padding:"11px 14px",fontSize:16,borderRadius:"var(--r2)",background:"var(--bg3)",border:"0.5px solid var(--border2)",color:"var(--ink)"}}/>
+    </div>
+  );
+}
+function ScalePickerField({label, val, setVal, low, high}) {
+  return (
+    <div className="ci-row">
+      <div className="ci-q" style={{marginBottom:10}}><span>{label}</span></div>
+      <div style={{display:"flex",gap:6}}>
+        {[1,2,3,4,5].map(n=>(
+          <div key={n} onClick={()=>setVal(n)} style={{
+            flex:1,padding:"10px 0",borderRadius:"var(--r2)",textAlign:"center",fontSize:13,fontWeight:500,cursor:"pointer",transition:"all .15s",
+            background:val===n?"var(--accent)":"var(--bg3)",color:val===n?"#fff":"var(--muted)",
+            border:`0.5px solid ${val===n?"var(--accent)":"var(--border2)"}`,
+          }}>{n}</div>
+        ))}
+      </div>
+      <div className="ci-ends" style={{marginTop:5}}><span className="ci-end">{low}</span><span className="ci-end">{high}</span></div>
+    </div>
+  );
+}
+function BucketPickerField({label, target, val, setVal, buckets, color}) {
+  return (
+    <div className="ci-row">
+      <div className="ci-q" style={{marginBottom:6,flexDirection:"column",alignItems:"flex-start",gap:2}}>
+        <span>{label}</span><span style={{fontSize:10,color:"var(--teal)",fontWeight:500}}>{target}</span>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
+        {buckets.map(b=>(
+          <div key={b.v} onClick={()=>setVal(b.v)} style={{
+            padding:"10px 4px",borderRadius:"var(--r2)",textAlign:"center",fontSize:12,fontWeight:500,cursor:"pointer",transition:"all .15s",
+            background:val===b.v?color:"var(--bg3)",color:val===b.v?"#fff":"var(--muted)",
+            border:`0.5px solid ${val===b.v?color:"var(--border2)"}`,
+          }}>{b.l}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+function YesNoField({val, setVal}) {
+  return (
+    <div className="toggle-row">
+      <div className={`tog ${val===true?"on":""}`} onClick={()=>setVal(true)}>Yes</div>
+      <div className={`tog ${val===false&&val!==null?"off":""}`} onClick={()=>setVal(false)}>No</div>
+    </div>
+  );
+}
+
+/* ─── EVENING FORM (full check-in) ──────────────────────────────── */
+function EveningForm({ entries, onSave, goHome, PeriodTabs }) {
 
   // Level selector — only for evening
   const recentDates = [...new Set(entries.map(e=>e.date))].sort().slice(-3);
@@ -670,48 +901,9 @@ function CheckIn({ entries, onSave, goHome }) {
   const [lateNightPhone, setLateNightPhone] = useState(false);
   const [reactivity, setReactivity] = useState(false);
 
-  // Re-populate state whenever activePeriod changes
-  useEffect(() => {
-    setIsResetting(true);
-    const periods = getDayEntries(entries, today);
-    const e = periods[activePeriod] || {};
-    setWorkoutMins(e.workoutMins??0);
-    setSleepBucket(e.sleepBucket??"7-8");
-    setBedtime(e.bedtime??"23:00");
-    setEnergy(e.energy??3);
-    setSunlight(e.sunlight??null);
-    setMealBefore2(e.mealBefore2??null);
-    setCaffeineCups(e.caffeineCups??2);
-    setUpskillTime(e.upskillTime??"0");
-    setClarity(e.clarity??3);
-    setScreenTime(e.screenTime??"0");
-    setSideHustle(e.sideHustle??"none");
-    setHobbyTime(e.hobbyTime??e.chessTime??"0");
-    setPagesRead(e.pagesRead??0);
-    setMeditationMins(e.meditationMins??0);
-    setMood(e.mood??3);
-    setFamilyContact(e.familyContact??"none");
-    setContactQuality(e.contactQuality??false);
-    setMeaning(e.meaning??null);
-    setEnjoyable(e.enjoyable??null);
-    setGratitude(e.gratitude??"");
-    setCigarettes(e.cigarettes??0);
-    setAlcohol(e.alcohol??0);
-    setSugarDay(e.sugarDay??false);
-    setJunkDinner(e.junkDinner??false);
-    setHydrated(e.hydrated??true);
-    setTimeWasted(e.timeWasted??0);
-    setRumination(e.rumination??1);
-    setNegativeSelfTalk(e.negativeSelfTalk??false);
-    setSocialMediaTime(e.socialMediaTime??"0");
-    setMasturbation(e.masturbation??false);
-    setLateNightPhone(e.lateNightPhone??false);
-    setReactivity(e.reactivity??false);
-    setSubmitted(false);
-    if (activePeriod === "evening" && e.checkInLevel) setLevel(e.checkInLevel);
-    // Small timeout to let React flush state before rendering form
-    setTimeout(() => setIsResetting(false), 50);
-  }, [activePeriod, entries]);
+  // Re-populate from any existing evening entry
+  const today = TODAY();
+  const existingEvening = getDayEntries(entries, today).evening || {};
 
   // Derive numeric values from time/bucket strings for scoring
   const timeToMins = t => {
@@ -725,7 +917,7 @@ function CheckIn({ entries, onSave, goHome }) {
 
   const handleSave = async () => {
     const entry = {
-      date: today, period: activePeriod, submitted: true, checkInLevel: level,
+      date: today, period: "evening", submitted: true, checkInLevel: level,
       workoutMins,
       sleepBucket, sleepHrs: sleepBucketToHrs(sleepBucket),
       bedtime, bedtimeHr: bedtimeToHr(bedtime),
@@ -915,121 +1107,39 @@ function CheckIn({ entries, onSave, goHome }) {
     );
   }
 
-  if (isResetting) {
-    return (
-      <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",background:"var(--bg)"}}>
-        <div style={{fontFamily:"var(--serif)",fontSize:20,color:"var(--muted)"}}>
-          {PERIODS[activePeriod]?.icon}
-        </div>
-      </div>
-    );
-  }
-
   if (submitted) {
     return (
-      <div className="scroll" style={{padding:"52px 16px 16px"}}>
-        <div style={{textAlign:"center",padding:"60px 0"}}>
-          <div style={{fontFamily:"var(--serif)",fontSize:28,marginBottom:10,color:"var(--ink)"}}>
-            {PERIODS[activePeriod].icon} Saved.
-          </div>
-          <div style={{fontSize:14,color:"var(--muted)",lineHeight:1.6,marginBottom:24}}>
-            {activePeriod==="morning" ? "Morning logged. Check back at 2pm." : activePeriod==="midday" ? "Midday logged. Evening check-in opens at 8pm." : "Day closed. See you tomorrow."}
-          </div>
+      <div className="scroll" style={{padding:"0 16px 16px"}}>
+        <PeriodTabs/>
+        <div style={{textAlign:"center",padding:"40px 0"}}>
+          <div style={{fontFamily:"var(--serif)",fontSize:28,marginBottom:10,color:"var(--ink)"}}>🌙 Day closed.</div>
+          <div style={{fontSize:14,color:"var(--muted)",lineHeight:1.6,marginBottom:24}}>See you tomorrow.</div>
           <button style={{background:"var(--accent)",color:"#fff",padding:"12px 28px",borderRadius:"var(--r)",fontSize:14}} onClick={goHome}>Back to dashboard</button>
         </div>
       </div>
     );
   }
 
-  // ── MORNING FORM ──────────────────────────────────────────────
-  if (activePeriod === "morning") return (
-    <div className="scroll" style={{padding:"0 0 16px"}}>
-      <LevelHeader/>
-      <div className="section" style={{marginTop:8}}>
-        <div className="ci-block">
-          <SleepBucket val={sleepBucket} setVal={setSleepBucket}/>
-          <TimePicker label="Bedtime last night" val={bedtime} setVal={setBedtime} hint="when you got into bed"/>
-          <ScalePicker label="Physical energy right now" val={energy} setVal={setEnergy} low="Depleted" high="Fully charged"/>
-          <div className="ci-row">
-            <div className="ci-q"><span>Morning sunlight (before 10am)</span></div>
-            <YesNo val={sunlight} setVal={setSunlight}/>
+  // Evening level header
+  const EveningHeader = () => (
+    <div style={{padding:"0 16px 0"}}>
+      <div style={{fontFamily:"var(--serif)",fontSize:20,marginBottom:2}}>🌙 Evening check-in</div>
+      <div style={{fontSize:12,color:"var(--muted)",marginBottom:12}}>
+        {level===1?"5 signals · 60 seconds":level===2?"Core signals · 2-3 min":"Full picture · 5 min"}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:14}}>
+        {[{l:1,label:"Pulse",sub:"60 sec"},{l:2,label:"Check-in",sub:"2-3 min"},{l:3,label:"Deep",sub:"5 min"}].map(({l,label,sub})=>(
+          <div key={l} onClick={()=>setLevel(l)} style={{
+            padding:"8px 4px",borderRadius:"var(--r2)",textAlign:"center",cursor:"pointer",transition:"all .15s",
+            background:level===l?"var(--accent)":"var(--bg2)",
+            border:`0.5px solid ${level===l?"var(--accent)":"var(--border)"}`,
+          }}>
+            <div style={{fontSize:11,fontWeight:500,color:level===l?"#fff":"var(--ink2)"}}>{label}</div>
+            <div style={{fontSize:9,color:level===l?"rgba(255,255,255,.7)":"var(--muted)",marginTop:1}}>{sub}</div>
           </div>
-          <div className="ci-row">
-            <div className="ci-q"><span>First meal before 2pm planned?</span></div>
-            <YesNo val={mealBefore2} setVal={setMealBefore2}/>
-          </div>
-        </div>
+        ))}
       </div>
-      <button className="submit-btn" onClick={handleSave}>Log morning →</button>
-    </div>
-  );
-
-  // ── MIDDAY FORM ───────────────────────────────────────────────
-  if (activePeriod === "midday") return (
-    <div className="scroll" style={{padding:"0 0 16px"}}>
-      <LevelHeader/>
-      <div className="section" style={{marginTop:8}}>
-        <div className="ci-block">
-          <ScalePicker label="Mental clarity right now" val={clarity} setVal={setClarity} low="Noise everywhere" high="Laser clarity"/>
-          <BucketPicker label="Screen time so far" target="Target: under 2 hrs total"
-            val={screenTime} setVal={setScreenTime} color="var(--accent)"
-            buckets={[{v:"0",l:"None"},{v:"0:30",l:"30 min"},{v:"1:00",l:"1 hr"},{v:"2:00",l:"2 hrs"},{v:"3:00",l:"3 hrs"},{v:"5:00",l:"5 hrs+"}]}/>
-          <ScalePicker label="Overall mood" val={mood} setVal={setMood} low="Hollow" high="Invested"/>
-          <ScalePicker label="Rumination level" val={rumination} setVal={setRumination} low="Quiet mind" high="Consumed"/>
-          <BucketPicker label="Upskill time so far" target="Weekdays: 2 hrs total"
-            val={upskillTime} setVal={setUpskillTime} color="var(--purple)"
-            buckets={[{v:"0",l:"None"},{v:"0:30",l:"30 min"},{v:"1:00",l:"1 hr"},{v:"2:00",l:"2 hrs"},{v:"4:00",l:"4 hrs"},{v:"6:00",l:"6 hrs+"}]}/>
-        </div>
-      </div>
-      <button className="submit-btn" onClick={handleSave}>Log midday →</button>
-    </div>
-  );
-
-  // ── EVENING FORMS (level 1/2/3) ───────────────────────────────
-  // ── LEVEL 1: PULSE ─────────────────────────────────────────────
-  const LevelHeader = () => (
-    <div style={{padding:"52px 16px 0"}}>
-      {/* Period tabs */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:16}}>
-        {Object.entries(PERIODS).map(([id, p]) => {
-          const done = !!todayPeriods[id];
-          const isActive = activePeriod === id;
-          return (
-            <div key={id} onClick={()=>{ setActivePeriod(id); }} style={{
-              padding:"9px 4px", borderRadius:"var(--r2)", textAlign:"center",
-              cursor:"pointer", transition:"all .15s",
-              background: isActive ? "var(--bg3)" : "var(--bg2)",
-              border: `0.5px solid ${isActive ? "var(--accent)" : done ? "#1d9e7544" : "var(--border)"}`,
-            }}>
-              <div style={{fontSize:13}}>{p.icon}</div>
-              <div style={{fontSize:10,fontWeight:500,marginTop:2,color:isActive?"var(--accent)":done?"#3d8c6c":"var(--muted)"}}>{p.label}</div>
-              {done && <div style={{fontSize:9,color:"#3d8c6c"}}>✓</div>}
-            </div>
-          );
-        })}
-      </div>
-      <div style={{fontFamily:"var(--serif)",fontSize:20,marginBottom:2}}>
-        {PERIODS[activePeriod].icon} {PERIODS[activePeriod].label} check-in
-      </div>
-      <div style={{fontSize:12,color:"var(--muted)",marginBottom:14}}>
-        {activePeriod==="morning" ? "Sleep + energy · 60 seconds" : activePeriod==="midday" ? "Focus + drift check · 60 seconds" : level===1?"5 signals · 60 seconds":level===2?"Core signals · 2-3 min":"Full picture · 5 min"}
-      </div>
-      {/* Level switcher — only for evening */}
-      {activePeriod === "evening" && (
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:14}}>
-          {[{l:1,label:"Pulse",sub:"60 sec"},{l:2,label:"Check-in",sub:"2-3 min"},{l:3,label:"Deep",sub:"5 min"}].map(({l,label,sub})=>(
-            <div key={l} onClick={()=>setLevel(l)} style={{
-              padding:"8px 4px",borderRadius:"var(--r2)",textAlign:"center",cursor:"pointer",transition:"all .15s",
-              background:level===l?"var(--accent)":"var(--bg2)",
-              border:`0.5px solid ${level===l?"var(--accent)":"var(--border)"}`,
-            }}>
-              <div style={{fontSize:11,fontWeight:500,color:level===l?"#fff":"var(--ink2)"}}>{label}</div>
-              <div style={{fontSize:9,color:level===l?"rgba(255,255,255,.7)":"var(--muted)",marginTop:1}}>{sub}</div>
-            </div>
-          ))}
-        </div>
-      )}
-      {activePeriod==="evening" && level===3 && avgRecentDrain>=41 && (
+      {level===3 && avgRecentDrain>=41 && (
         <div style={{background:"#2a1212",border:"0.5px solid #c8553d44",borderRadius:"var(--r2)",padding:"10px 12px",marginBottom:12,fontSize:12,color:"#c8553d",lineHeight:1.5}}>
           ▽ Drain elevated recently. Deep audit recommended.
         </div>
@@ -1040,7 +1150,7 @@ function CheckIn({ entries, onSave, goHome }) {
   // ── LEVEL 1: PULSE ─────────────────────────────────────────────
   if (level === 1) return (
     <div className="scroll" style={{padding:"0 0 16px"}}>
-      <LevelHeader/>
+      <PeriodTabs/><EveningHeader/>
       <div className="section" style={{marginTop:8}}>
         <div className="ci-block">
           <SleepBucket val={sleepBucket} setVal={setSleepBucket}/>
@@ -1067,7 +1177,7 @@ function CheckIn({ entries, onSave, goHome }) {
   // ── LEVEL 2: CORE CHECK-IN ─────────────────────────────────────
   if (level === 2) return (
     <div className="scroll" style={{padding:"0 0 16px"}}>
-      <LevelHeader/>
+      <PeriodTabs/><EveningHeader/>
       <div className="section" style={{marginTop:8}}>
         <div className="section-title">Physical</div>
         <div className="ci-block">
@@ -1127,7 +1237,7 @@ function CheckIn({ entries, onSave, goHome }) {
   // ── LEVEL 3: DEEP AUDIT (full) ────────────────────────────────
   return (
     <div className="scroll" style={{padding:"0 0 16px"}}>
-      <LevelHeader/>
+      <PeriodTabs/><EveningHeader/>
 
       {/* PHYSICAL */}
       <div className="section" style={{marginTop:8}}>
