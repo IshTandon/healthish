@@ -5,8 +5,108 @@ const KEYS = {
   entries:    "healthish:entries",
   profile:    "healthish:profile",
   onboarded:  "healthish:onboarded",
-  icp:        "healthish:icp",        // struggle + goal — collected once
+  icp:        "healthish:icp",
 };
+
+/* ─── ONESIGNAL ─────────────────────────────────────────────────── */
+const ONESIGNAL_APP_ID = "c4a25421-fc97-4772-8bf4-4453b5de6e4f";
+
+function initOneSignal() {
+  if (typeof window === "undefined") return;
+  window.OneSignalDeferred = window.OneSignalDeferred || [];
+  window.OneSignalDeferred.push(async (OneSignal) => {
+    await OneSignal.init({
+      appId: ONESIGNAL_APP_ID,
+      serviceWorkerParam: { scope: "/" },
+      notifyButton: { enable: false },
+      allowLocalhostAsSecureOrigin: true,
+    });
+  });
+}
+
+async function requestNotificationPermission() {
+  try {
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    window.OneSignalDeferred.push(async (OneSignal) => {
+      const permission = await OneSignal.Notifications.requestPermission();
+      return permission;
+    });
+  } catch(e) {
+    console.log("Notification permission request failed", e);
+  }
+}
+
+/* ─── PERIOD HELPERS ────────────────────────────────────────────── */
+const PERIODS = {
+  morning: { label:"Morning",  hours:[8,12],  icon:"🌅", color:"#c4840a" },
+  midday:  { label:"Midday",   hours:[14,18], icon:"☀️",  color:"#7f77dd" },
+  evening: { label:"Evening",  hours:[20,24], icon:"🌙", color:"#1d9e75" },
+};
+
+// Returns which period is active right now, or null if between windows
+function getCurrentPeriod() {
+  const h = new Date().getHours();
+  if (h >= 8  && h < 12) return "morning";
+  if (h >= 14 && h < 18) return "midday";
+  if (h >= 20)           return "evening";
+  return null;
+}
+
+// Entry key includes period: "2026-04-08:morning"
+const periodKey = (date, period) => `${date}:${period}`;
+
+// Get all entries for a given date across all periods
+function getDayEntries(entries, date) {
+  return {
+    morning: entries.find(e => e.date === date && e.period === "morning") || null,
+    midday:  entries.find(e => e.date === date && e.period === "midday")  || null,
+    evening: entries.find(e => e.date === date && e.period === "evening") || null,
+  };
+}
+
+// Merge day entries into a single scoring object
+function mergeDayEntries(day) {
+  const { morning, midday, evening } = day;
+  if (!morning && !midday && !evening) return null;
+  return {
+    ...( morning || {}),
+    ...( midday  || {}),
+    ...( evening || {}),
+    // Scoring fields — use most recent non-null value
+    date:           (evening||midday||morning).date,
+    sleepHrs:       morning?.sleepHrs       ?? 7,
+    bedtimeHr:      morning?.bedtimeHr      ?? 23,
+    energy:         morning?.energy         ?? 3,
+    sunlight:       morning?.sunlight       ?? false,
+    mealBefore2:    morning?.mealBefore2    ?? false,
+    caffeineCups:   (evening||midday||morning)?.caffeineCups ?? 2,
+    upskillHrs:     (midday||evening)?.upskillHrs    ?? 0,
+    clarity:        midday?.clarity         ?? 3,
+    screenTimeHrs:  (midday||evening)?.screenTimeHrs ?? 3,
+    sideHustle:     (evening||midday)?.sideHustle    ?? "none",
+    hobbyMins:      (evening||midday)?.hobbyMins     ?? 0,
+    pagesRead:      (evening||midday)?.pagesRead     ?? 0,
+    meditationMins: evening?.meditationMins ?? 0,
+    mood:           (evening||midday||morning)?.mood ?? 3,
+    familyContact:  evening?.familyContact  ?? "none",
+    contactQuality: evening?.contactQuality ?? false,
+    meaning:        evening?.meaning        ?? false,
+    enjoyable:      evening?.enjoyable      ?? false,
+    gratitude:      evening?.gratitude      ?? "",
+    cigarettes:     evening?.cigarettes     ?? 0,
+    alcohol:        evening?.alcohol        ?? 0,
+    sugarDay:       evening?.sugarDay       ?? false,
+    junkDinner:     evening?.junkDinner     ?? false,
+    hydrated:       evening?.hydrated       ?? true,
+    timeWasted:     evening?.timeWasted     ?? 0,
+    rumination:     (evening||midday)?.rumination    ?? 1,
+    negativeSelfTalk: evening?.negativeSelfTalk ?? false,
+    socialMins:     (evening||midday)?.socialMins    ?? 0,
+    masturbation:   evening?.masturbation   ?? false,
+    lateNightPhone: evening?.lateNightPhone ?? false,
+    reactivity:     evening?.reactivity     ?? false,
+  };
+}
 
 /* ─── SCORING ENGINE ────────────────────────────────────────────── */
 function scorePhysical(e, allEntries) {
@@ -514,16 +614,22 @@ function Onboarding({ onDone, existing }) {
 /* ─── CHECK-IN FORM ─────────────────────────────────────────────── */
 function CheckIn({ entries, onSave, goHome }) {
   const today = TODAY();
-  const existing = entries.find(e=>e.date===today) || {};
-  const [submitted, setSubmitted] = useState(!!existing.submitted);
+  const currentPeriod = getCurrentPeriod();
+  const todayPeriods = getDayEntries(entries, today);
 
-  // Determine auto-suggested level based on recent drain data
-  const recentEntries = entries.slice(-3);
-  const avgRecentDrain = recentEntries.length
-    ? Math.round(recentEntries.map(e=>scoreDrain(e,entries)).reduce((a,b)=>a+b,0)/recentEntries.length)
+  // Default to current period, or evening if outside windows
+  const [activePeriod, setActivePeriod] = useState(currentPeriod || "evening");
+  const existing = todayPeriods[activePeriod] || {};
+  const [submitted, setSubmitted] = useState(false);
+
+  // Level selector — only for deep audit (evening)
+  const recentDates = [...new Set(entries.map(e=>e.date))].sort().slice(-3);
+  const recentMerged = recentDates.map(d=>mergeDayEntries(getDayEntries(entries,d))).filter(Boolean);
+  const avgRecentDrain = recentMerged.length
+    ? Math.round(recentMerged.map(e=>scoreDrain(e,entries)).reduce((a,b)=>a+b,0)/recentMerged.length)
     : 0;
-  const suggestedLevel = avgRecentDrain >= 41 ? 3 : existing.submitted ? 2 : 1;
-  const [level, setLevel] = useState(existing.checkInLevel || suggestedLevel);
+  const suggestedLevel = avgRecentDrain >= 41 ? 3 : 2;
+  const [level, setLevel] = useState(existing.checkInLevel || (activePeriod === "morning" ? 1 : activePeriod === "midday" ? 1 : suggestedLevel));
 
   // Physical
   const [workoutMins, setWorkoutMins] = useState(existing.workoutMins??0);
@@ -577,7 +683,7 @@ function CheckIn({ entries, onSave, goHome }) {
 
   const handleSave = async () => {
     const entry = {
-      date: today, submitted: true, checkInLevel: level,
+      date: today, period: activePeriod, submitted: true, checkInLevel: level,
       workoutMins,
       sleepBucket, sleepHrs: sleepBucketToHrs(sleepBucket),
       bedtime, bedtimeHr: bedtimeToHr(bedtime),
@@ -771,44 +877,109 @@ function CheckIn({ entries, onSave, goHome }) {
     return (
       <div className="scroll" style={{padding:"52px 16px 16px"}}>
         <div style={{textAlign:"center",padding:"60px 0"}}>
-          <div style={{fontFamily:"var(--serif)",fontSize:28,marginBottom:10,color:"var(--ink)"}}>Done for today.</div>
-          <div style={{fontSize:14,color:"var(--muted)",lineHeight:1.6,marginBottom:24}}>Your data is saved. Come back tomorrow.</div>
-          <button style={{background:"var(--accent)",color:"#fff",padding:"12px 28px",borderRadius:"var(--r)",fontSize:14}} onClick={()=>setSubmitted(false)}>Update today's entry</button>
+          <div style={{fontFamily:"var(--serif)",fontSize:28,marginBottom:10,color:"var(--ink)"}}>
+            {PERIODS[activePeriod].icon} Saved.
+          </div>
+          <div style={{fontSize:14,color:"var(--muted)",lineHeight:1.6,marginBottom:24}}>
+            {activePeriod==="morning" ? "Morning logged. Check back at 2pm." : activePeriod==="midday" ? "Midday logged. Evening check-in opens at 8pm." : "Day closed. See you tomorrow."}
+          </div>
+          <button style={{background:"var(--accent)",color:"#fff",padding:"12px 28px",borderRadius:"var(--r)",fontSize:14}} onClick={goHome}>Back to dashboard</button>
         </div>
       </div>
     );
   }
 
-  // ── Level selector header ─────────────────────────────────────
+  // ── MORNING FORM ──────────────────────────────────────────────
+  if (activePeriod === "morning") return (
+    <div className="scroll" style={{padding:"0 0 16px"}}>
+      <LevelHeader/>
+      <div className="section" style={{marginTop:8}}>
+        <div className="ci-block">
+          <SleepBucket val={sleepBucket} setVal={setSleepBucket}/>
+          <TimePicker label="Bedtime last night" val={bedtime} setVal={setBedtime} hint="when you got into bed"/>
+          <ScalePicker label="Physical energy right now" val={energy} setVal={setEnergy} low="Depleted" high="Fully charged"/>
+          <div className="ci-row">
+            <div className="ci-q"><span>Morning sunlight (before 10am)</span></div>
+            <YesNo val={sunlight} setVal={setSunlight}/>
+          </div>
+          <div className="ci-row">
+            <div className="ci-q"><span>First meal before 2pm planned?</span></div>
+            <YesNo val={mealBefore2} setVal={setMealBefore2}/>
+          </div>
+        </div>
+      </div>
+      <button className="submit-btn" onClick={handleSave}>Log morning →</button>
+    </div>
+  );
+
+  // ── MIDDAY FORM ───────────────────────────────────────────────
+  if (activePeriod === "midday") return (
+    <div className="scroll" style={{padding:"0 0 16px"}}>
+      <LevelHeader/>
+      <div className="section" style={{marginTop:8}}>
+        <div className="ci-block">
+          <ScalePicker label="Mental clarity right now" val={clarity} setVal={setClarity} low="Noise everywhere" high="Laser clarity"/>
+          <BucketPicker label="Screen time so far" target="Target: under 2 hrs total"
+            val={screenTime} setVal={setScreenTime} color="var(--accent)"
+            buckets={[{v:"0",l:"None"},{v:"0:30",l:"30 min"},{v:"1:00",l:"1 hr"},{v:"2:00",l:"2 hrs"},{v:"3:00",l:"3 hrs"},{v:"5:00",l:"5 hrs+"}]}/>
+          <ScalePicker label="Overall mood" val={mood} setVal={setMood} low="Hollow" high="Invested"/>
+          <ScalePicker label="Rumination level" val={rumination} setVal={setRumination} low="Quiet mind" high="Consumed"/>
+          <BucketPicker label="Upskill time so far" target="Weekdays: 2 hrs total"
+            val={upskillTime} setVal={setUpskillTime} color="var(--purple)"
+            buckets={[{v:"0",l:"None"},{v:"0:30",l:"30 min"},{v:"1:00",l:"1 hr"},{v:"2:00",l:"2 hrs"},{v:"4:00",l:"4 hrs"},{v:"6:00",l:"6 hrs+"}]}/>
+        </div>
+      </div>
+      <button className="submit-btn" onClick={handleSave}>Log midday →</button>
+    </div>
+  );
+
+  // ── EVENING FORMS (level 1/2/3) ───────────────────────────────
+  // ── LEVEL 1: PULSE ─────────────────────────────────────────────
   const LevelHeader = () => (
     <div style={{padding:"52px 16px 0"}}>
-      <div style={{fontFamily:"var(--serif)",fontSize:22,marginBottom:4}}>
-        {level===1 ? "Morning pulse" : level===2 ? "Daily check-in" : "Deep audit"}
-      </div>
-      <div style={{fontSize:12,color:"var(--muted)",marginBottom:16}}>
-        {level===1 ? "5 signals · 60 seconds" : level===2 ? "Core signals · 2-3 minutes" : "Full picture · 5 minutes"}
-      </div>
-      {/* Level switcher */}
+      {/* Period tabs */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:16}}>
-        {[
-          {l:1, label:"Pulse", sub:"60 sec"},
-          {l:2, label:"Check-in", sub:"2-3 min"},
-          {l:3, label:"Deep audit", sub:"5 min"},
-        ].map(({l,label,sub})=>(
-          <div key={l} onClick={()=>setLevel(l)} style={{
-            padding:"10px 6px", borderRadius:"var(--r2)", textAlign:"center",
-            cursor:"pointer", transition:"all .15s",
-            background: level===l ? "var(--accent)" : "var(--bg2)",
-            border: `0.5px solid ${level===l ? "var(--accent)" : "var(--border)"}`,
-          }}>
-            <div style={{fontSize:12,fontWeight:500,color:level===l?"#fff":"var(--ink2)"}}>{label}</div>
-            <div style={{fontSize:10,color:level===l?"rgba(255,255,255,.7)":"var(--muted)",marginTop:2}}>{sub}</div>
-          </div>
-        ))}
+        {Object.entries(PERIODS).map(([id, p]) => {
+          const done = !!todayPeriods[id];
+          const isActive = activePeriod === id;
+          return (
+            <div key={id} onClick={()=>{ setActivePeriod(id); }} style={{
+              padding:"9px 4px", borderRadius:"var(--r2)", textAlign:"center",
+              cursor:"pointer", transition:"all .15s",
+              background: isActive ? "var(--bg3)" : "var(--bg2)",
+              border: `0.5px solid ${isActive ? "var(--accent)" : done ? "#1d9e7544" : "var(--border)"}`,
+            }}>
+              <div style={{fontSize:13}}>{p.icon}</div>
+              <div style={{fontSize:10,fontWeight:500,marginTop:2,color:isActive?"var(--accent)":done?"#3d8c6c":"var(--muted)"}}>{p.label}</div>
+              {done && <div style={{fontSize:9,color:"#3d8c6c"}}>✓</div>}
+            </div>
+          );
+        })}
       </div>
-      {level===3 && avgRecentDrain >= 41 && (
+      <div style={{fontFamily:"var(--serif)",fontSize:20,marginBottom:2}}>
+        {PERIODS[activePeriod].icon} {PERIODS[activePeriod].label} check-in
+      </div>
+      <div style={{fontSize:12,color:"var(--muted)",marginBottom:14}}>
+        {activePeriod==="morning" ? "Sleep + energy · 60 seconds" : activePeriod==="midday" ? "Focus + drift check · 60 seconds" : level===1?"5 signals · 60 seconds":level===2?"Core signals · 2-3 min":"Full picture · 5 min"}
+      </div>
+      {/* Level switcher — only for evening */}
+      {activePeriod === "evening" && (
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:14}}>
+          {[{l:1,label:"Pulse",sub:"60 sec"},{l:2,label:"Check-in",sub:"2-3 min"},{l:3,label:"Deep",sub:"5 min"}].map(({l,label,sub})=>(
+            <div key={l} onClick={()=>setLevel(l)} style={{
+              padding:"8px 4px",borderRadius:"var(--r2)",textAlign:"center",cursor:"pointer",transition:"all .15s",
+              background:level===l?"var(--accent)":"var(--bg2)",
+              border:`0.5px solid ${level===l?"var(--accent)":"var(--border)"}`,
+            }}>
+              <div style={{fontSize:11,fontWeight:500,color:level===l?"#fff":"var(--ink2)"}}>{label}</div>
+              <div style={{fontSize:9,color:level===l?"rgba(255,255,255,.7)":"var(--muted)",marginTop:1}}>{sub}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {activePeriod==="evening" && level===3 && avgRecentDrain>=41 && (
         <div style={{background:"#2a1212",border:"0.5px solid #c8553d44",borderRadius:"var(--r2)",padding:"10px 12px",marginBottom:12,fontSize:12,color:"#c8553d",lineHeight:1.5}}>
-          ▽ Drain has been elevated for {recentEntries.length}+ days. Deep audit recommended.
+          ▽ Drain elevated recently. Deep audit recommended.
         </div>
       )}
     </div>
@@ -1271,23 +1442,35 @@ function getRecommendations(todayEntry, allEntries, pScore, mScore, eScore, dSco
 /* ─── DASHBOARD ─────────────────────────────────────────────────── */
 function Dashboard({ entries, profile, setTab, icp }) {
   const today = TODAY();
-  const todayEntry = entries.find(e=>e.date===today);
-  const recentEntries = entries.slice(-14);
+
+  // Merge today's periods into one scoring object
+  const todayPeriods = getDayEntries(entries, today);
+  const todayEntry = mergeDayEntries(todayPeriods);
+  const recentDates = [...new Set(entries.map(e=>e.date))].sort().slice(-14);
+  const recentEntries = recentDates.map(d => mergeDayEntries(getDayEntries(entries, d))).filter(Boolean);
 
   const pScore = todayEntry ? scorePhysical(todayEntry, recentEntries) : null;
   const mScore = todayEntry ? scoreMental(todayEntry) : null;
   const eScore = todayEntry ? scoreEmotional(todayEntry, recentEntries) : null;
   const dScore = todayEntry ? scoreDrain(todayEntry, recentEntries) : null;
-  const dInfo = dScore !== null ? drainLabel(dScore) : null;
+  const dInfo  = dScore !== null ? drainLabel(dScore) : null;
+
+  // Period completion status for today
+  const currentPeriod = getCurrentPeriod();
+  const periodsDone = {
+    morning: !!todayPeriods.morning,
+    midday:  !!todayPeriods.midday,
+    evening: !!todayPeriods.evening,
+  };
 
   // build last 7 days
   const last7 = Array.from({length:7},(_,i)=>{
     const d = new Date(); d.setDate(d.getDate()-(6-i));
     const key = d.toISOString().split("T")[0];
-    const entry = entries.find(e=>e.date===key);
-    const ps = entry ? scorePhysical(entry,entries) : null;
-    const ms = entry ? scoreMental(entry) : null;
-    const es = entry ? scoreEmotional(entry,entries) : null;
+    const merged = mergeDayEntries(getDayEntries(entries, key));
+    const ps = merged ? scorePhysical(merged, recentEntries) : null;
+    const ms = merged ? scoreMental(merged) : null;
+    const es = merged ? scoreEmotional(merged, recentEntries) : null;
     const avg = ps!==null ? Math.round((ps+ms+es)/3) : null;
     return { key, day: DAYS[d.getDay()], avg, isToday: key===today };
   });
@@ -1378,13 +1561,36 @@ function Dashboard({ entries, profile, setTab, icp }) {
         </div>
       )}
 
-      {/* CHECK-IN PROMPT */}
-      {!todayEntry && (
+      {/* PERIOD STATUS STRIP */}
+      <div style={{margin:"10px 16px 0",display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}} className="fade-up">
+        {Object.entries(PERIODS).map(([id, p]) => {
+          const done = periodsDone[id];
+          const active = currentPeriod === id;
+          return (
+            <div key={id} onClick={()=>!done && setTab("checkin")} style={{
+              padding:"10px 8px", borderRadius:"var(--r2)", textAlign:"center",
+              cursor: done ? "default" : "pointer",
+              background: done ? "#0f2a1a" : active ? "#1a1208" : "var(--bg2)",
+              border: `0.5px solid ${done ? "#1d9e7566" : active ? "var(--accent)" : "var(--border)"}`,
+              transition:"all .2s",
+            }}>
+              <div style={{fontSize:16,marginBottom:3}}>{p.icon}</div>
+              <div style={{fontSize:11,fontWeight:500,color: done ? "#3d8c6c" : active ? "var(--accent)" : "var(--muted)"}}>{p.label}</div>
+              <div style={{fontSize:10,color: done ? "#3d8c6c" : active ? "var(--accent)" : "var(--muted)",marginTop:2}}>
+                {done ? "✓ Done" : active ? "Open now" : `${p.hours[0]}–${p.hours[1]}h`}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* CHECK-IN PROMPT — only show if current period not done */}
+      {currentPeriod && !periodsDone[currentPeriod] && (
         <div style={{margin:"10px 16px 0"}} className="fade-up">
           <div style={{background:"var(--accent)",borderRadius:"var(--r)",padding:16,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}} onClick={()=>setTab("checkin")}>
             <div>
-              <div style={{fontSize:14,fontWeight:500,color:"#fff"}}>Check in for today</div>
-              <div style={{fontSize:12,color:"rgba(255,255,255,.6)",marginTop:2}}>Under 3 minutes</div>
+              <div style={{fontSize:14,fontWeight:500,color:"#fff"}}>{PERIODS[currentPeriod].icon} {PERIODS[currentPeriod].label} check-in open</div>
+              <div style={{fontSize:12,color:"rgba(255,255,255,.6)",marginTop:2}}>Under 2 minutes</div>
             </div>
             <div style={{fontSize:24,color:"rgba(255,255,255,.8)"}}>→</div>
           </div>
@@ -1699,6 +1905,27 @@ function Profile({ profile, entries, onEdit }) {
           <div className="p-row">
             <span className="p-key">Brother</span>
             <span className="p-val" style={{color:"var(--teal)"}}>Primary anchor</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="section" style={{marginTop:16}}>
+        <div className="section-title">Notifications</div>
+        <div className="card">
+          <div style={{fontSize:13,color:"var(--ink2)",lineHeight:1.6,marginBottom:12}}>
+            Get reminded to check in 3 times a day — morning (8am), midday (2pm), and evening (9pm).
+          </div>
+          <button
+            onClick={requestNotificationPermission}
+            style={{
+              width:"100%", padding:12, borderRadius:"var(--r2)",
+              background:"var(--accent)", color:"#fff",
+              fontSize:13, fontWeight:500,
+            }}>
+            Enable check-in reminders
+          </button>
+          <div style={{fontSize:11,color:"var(--muted)",marginTop:8,lineHeight:1.5,textAlign:"center"}}>
+            You can turn these off anytime in your phone settings
           </div>
         </div>
       </div>
@@ -2222,8 +2449,13 @@ export default function HealthIsh() {
       setOnboarded(!!ob);
       setProfile(pr||null);
       setEntries(en||[]);
-      setIcp(ic||null); // null = not completed yet
+      setIcp(ic||null);
     })();
+
+    // Initialise OneSignal after a short delay to let SDK load
+    setTimeout(() => {
+      initOneSignal();
+    }, 1500);
   },[]);
 
   const handleOnboard = async (pr) => {
@@ -2232,8 +2464,16 @@ export default function HealthIsh() {
   };
 
   const handleSaveEntry = async (entry) => {
-    const updated = [...entries.filter(e=>e.date!==entry.date), entry]
-      .sort((a,b)=>a.date.localeCompare(b.date));
+    // Filter by both date AND period so periods don't overwrite each other
+    const updated = [
+      ...entries.filter(e => !(e.date === entry.date && e.period === entry.period)),
+      entry,
+    ].sort((a,b) => {
+      const dateCompare = a.date.localeCompare(b.date);
+      if (dateCompare !== 0) return dateCompare;
+      const order = { morning:0, midday:1, evening:2 };
+      return (order[a.period]??0) - (order[b.period]??0);
+    });
     setEntries(updated);
     await storageSet(KEYS.entries, updated);
   };
