@@ -671,7 +671,8 @@ function CheckIn({ entries, onSave, goHome }) {
 
   // Re-populate state whenever activePeriod changes
   useEffect(() => {
-    const e = todayPeriods[activePeriod] || {};
+    const periods = getDayEntries(entries, today);
+    const e = periods[activePeriod] || {};
     setWorkoutMins(e.workoutMins??0);
     setSleepBucket(e.sleepBucket??"7-8");
     setBedtime(e.bedtime??"23:00");
@@ -706,7 +707,7 @@ function CheckIn({ entries, onSave, goHome }) {
     setReactivity(e.reactivity??false);
     setSubmitted(false);
     if (activePeriod === "evening" && e.checkInLevel) setLevel(e.checkInLevel);
-  }, [activePeriod]); // eslint-disable-line
+  }, [activePeriod, entries]); // include entries so stale closure is avoided
 
   // Derive numeric values from time/bucket strings for scoring
   const timeToMins = t => {
@@ -1537,9 +1538,10 @@ function Dashboard({ entries, profile, setTab, icp }) {
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
   // ICP context — what they said they're working on
-  const goalLabels = { momentum:"consistent momentum", drain:"reducing cognitive drain", patterns:"understanding your patterns", physical:"your physical baseline", focus_deep:"deep focus" };
+  const goalLabels = { momentum:"consistent momentum", drain:"reducing cognitive drain", patterns:"understanding patterns", physical:"physical baseline", focus_deep:"deep focus" };
   const goalText = icp?.goals?.length
-    ? icp.goals.map(g=>goalLabels[g]).filter(Boolean).join(" · ")
+    ? icp.goals.length >= 4 ? "building your personal operating system"
+      : icp.goals.map(g=>goalLabels[g]).filter(Boolean).join(" · ")
     : null;
 
   return (
@@ -2481,11 +2483,19 @@ export default function HealthIsh() {
     (async()=>{
       const ob = await storageGet(KEYS.onboarded);
       const pr = await storageGet(KEYS.profile);
-      const en = await storageGet(KEYS.entries);
       const ic = await storageGet(KEYS.icp);
+      let en = await storageGet(KEYS.entries) || [];
+
+      // Migrate legacy entries (no period field) → tag as "evening"
+      const migrated = en.map(e => e.period ? e : { ...e, period: "evening" });
+      if (migrated.some((e,i) => !en[i].period)) {
+        await storageSet(KEYS.entries, migrated);
+        en = migrated;
+      }
+
       setOnboarded(!!ob);
       setProfile(pr||null);
-      setEntries(en||[]);
+      setEntries(en);
       setIcp(ic||null);
     })();
 
