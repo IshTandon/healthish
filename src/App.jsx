@@ -618,11 +618,30 @@ function CheckIn({ entries, onSave, goHome }) {
   const todayPeriods = getDayEntries(entries, today);
   const [activePeriod, setActivePeriod] = useState(currentPeriod || "evening");
 
-  // Period tab header — shown on all period forms
-  const PeriodTabs = () => (
+  return (
+    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minHeight:0}}>
+      {activePeriod === "morning" && (
+        <MorningForm key="morning" entries={entries} onSave={onSave} goHome={goHome}
+          activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
+      )}
+      {activePeriod === "midday" && (
+        <MiddayForm key="midday" entries={entries} onSave={onSave} goHome={goHome}
+          activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
+      )}
+      {activePeriod === "evening" && (
+        <EveningForm key="evening" entries={entries} onSave={onSave} goHome={goHome}
+          activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
+      )}
+    </div>
+  );
+}
+
+/* ─── PERIOD TABS COMPONENT ─────────────────────────────────────── */
+function PeriodTabs({ activePeriod, setActivePeriod, todayPeriods }) {
+  return (
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:16,padding:"52px 16px 0"}}>
       {Object.entries(PERIODS).map(([id, p]) => {
-        const done = !!todayPeriods[id];
+        const done = !!(todayPeriods && todayPeriods[id]);
         const isActive = activePeriod === id;
         return (
           <div key={id} onClick={()=>setActivePeriod(id)} style={{
@@ -639,26 +658,10 @@ function CheckIn({ entries, onSave, goHome }) {
       })}
     </div>
   );
-
-  // Use React key to fully remount the form when period changes
-  // This avoids all stale state issues — each period gets a fresh component
-  return (
-    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minHeight:0}}>
-      {activePeriod === "morning" && (
-        <MorningForm key="morning" entries={entries} onSave={onSave} goHome={goHome} PeriodTabs={PeriodTabs}/>
-      )}
-      {activePeriod === "midday" && (
-        <MiddayForm key="midday" entries={entries} onSave={onSave} goHome={goHome} PeriodTabs={PeriodTabs}/>
-      )}
-      {activePeriod === "evening" && (
-        <EveningForm key="evening" entries={entries} onSave={onSave} goHome={goHome} PeriodTabs={PeriodTabs}/>
-      )}
-    </div>
-  );
 }
 
 /* ─── MORNING FORM ───────────────────────────────────────────────── */
-function MorningForm({ entries, onSave, goHome, PeriodTabs }) {
+function MorningForm({ entries, onSave, goHome, activePeriod, setActivePeriod, todayPeriods }) {
   const today = TODAY();
   const existing = getDayEntries(entries, today).morning || {};
   const [submitted, setSubmitted] = useState(!!existing.submitted);
@@ -683,7 +686,7 @@ function MorningForm({ entries, onSave, goHome, PeriodTabs }) {
 
   if (submitted) return (
     <div className="scroll" style={{padding:"52px 16px 16px",textAlign:"center"}}>
-      <PeriodTabs/>
+      <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
       <div style={{padding:"40px 0"}}>
         <div style={{fontFamily:"var(--serif)",fontSize:28,marginBottom:10,color:"var(--ink)"}}>🌅 Logged.</div>
         <div style={{fontSize:14,color:"var(--muted)",marginBottom:24}}>Morning captured. Check back at 2pm.</div>
@@ -694,7 +697,7 @@ function MorningForm({ entries, onSave, goHome, PeriodTabs }) {
 
   return (
     <div className="scroll" style={{padding:"0 0 16px"}}>
-      <PeriodTabs/>
+      <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
       <div style={{padding:"0 16px 8px"}}>
         <div style={{fontFamily:"var(--serif)",fontSize:20,marginBottom:2}}>🌅 Morning check-in</div>
         <div style={{fontSize:12,color:"var(--muted)"}}>Sleep + energy · 60 seconds</div>
@@ -720,7 +723,7 @@ function MorningForm({ entries, onSave, goHome, PeriodTabs }) {
 }
 
 /* ─── MIDDAY FORM ────────────────────────────────────────────────── */
-function MiddayForm({ entries, onSave, goHome, PeriodTabs }) {
+function MiddayForm({ entries, onSave, goHome, activePeriod, setActivePeriod, todayPeriods }) {
   const today = TODAY();
   const existing = getDayEntries(entries, today).midday || {};
   const [submitted, setSubmitted] = useState(!!existing.submitted);
@@ -744,7 +747,7 @@ function MiddayForm({ entries, onSave, goHome, PeriodTabs }) {
 
   if (submitted) return (
     <div className="scroll" style={{padding:"52px 16px 16px",textAlign:"center"}}>
-      <PeriodTabs/>
+      <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
       <div style={{padding:"40px 0"}}>
         <div style={{fontFamily:"var(--serif)",fontSize:28,marginBottom:10,color:"var(--ink)"}}>☀️ Logged.</div>
         <div style={{fontSize:14,color:"var(--muted)",marginBottom:24}}>Midday captured. Evening check-in opens at 8pm.</div>
@@ -755,7 +758,7 @@ function MiddayForm({ entries, onSave, goHome, PeriodTabs }) {
 
   return (
     <div className="scroll" style={{padding:"0 0 16px"}}>
-      <PeriodTabs/>
+      <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
       <div style={{padding:"0 16px 8px"}}>
         <div style={{fontFamily:"var(--serif)",fontSize:20,marginBottom:2}}>☀️ Midday check-in</div>
         <div style={{fontSize:12,color:"var(--muted)"}}>Focus + drift check · 60 seconds</div>
@@ -850,7 +853,7 @@ function YesNoField({val, setVal}) {
 }
 
 /* ─── EVENING FORM (full check-in) ──────────────────────────────── */
-function EveningForm({ entries, onSave, goHome, PeriodTabs }) {
+function EveningForm({ entries, onSave, goHome, activePeriod, setActivePeriod, todayPeriods }) {
 
   // Level selector — only for evening
   const recentDates = [...new Set(entries.map(e=>e.date))].sort().slice(-3);
@@ -1110,7 +1113,7 @@ function EveningForm({ entries, onSave, goHome, PeriodTabs }) {
   if (submitted) {
     return (
       <div className="scroll" style={{padding:"0 16px 16px"}}>
-        <PeriodTabs/>
+        <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
         <div style={{textAlign:"center",padding:"40px 0"}}>
           <div style={{fontFamily:"var(--serif)",fontSize:28,marginBottom:10,color:"var(--ink)"}}>🌙 Day closed.</div>
           <div style={{fontSize:14,color:"var(--muted)",lineHeight:1.6,marginBottom:24}}>See you tomorrow.</div>
@@ -1150,7 +1153,7 @@ function EveningForm({ entries, onSave, goHome, PeriodTabs }) {
   // ── LEVEL 1: PULSE ─────────────────────────────────────────────
   if (level === 1) return (
     <div className="scroll" style={{padding:"0 0 16px"}}>
-      <PeriodTabs/><EveningHeader/>
+      <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/><EveningHeader/>
       <div className="section" style={{marginTop:8}}>
         <div className="ci-block">
           <SleepBucket val={sleepBucket} setVal={setSleepBucket}/>
@@ -1177,7 +1180,7 @@ function EveningForm({ entries, onSave, goHome, PeriodTabs }) {
   // ── LEVEL 2: CORE CHECK-IN ─────────────────────────────────────
   if (level === 2) return (
     <div className="scroll" style={{padding:"0 0 16px"}}>
-      <PeriodTabs/><EveningHeader/>
+      <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/><EveningHeader/>
       <div className="section" style={{marginTop:8}}>
         <div className="section-title">Physical</div>
         <div className="ci-block">
@@ -1237,7 +1240,7 @@ function EveningForm({ entries, onSave, goHome, PeriodTabs }) {
   // ── LEVEL 3: DEEP AUDIT (full) ────────────────────────────────
   return (
     <div className="scroll" style={{padding:"0 0 16px"}}>
-      <PeriodTabs/><EveningHeader/>
+      <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/><EveningHeader/>
 
       {/* PHYSICAL */}
       <div className="section" style={{marginTop:8}}>
