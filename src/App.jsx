@@ -864,49 +864,50 @@ function EveningForm({ entries, onSave, goHome, activePeriod, setActivePeriod, t
   const suggestedLevel = avgRecentDrain >= 41 ? 3 : 2;
   const [level, setLevel] = useState(suggestedLevel);
 
-  // Physical
-  const [workoutMins, setWorkoutMins] = useState(0);
-  const [sleepBucket, setSleepBucket] = useState("7-8");
-  const [bedtime, setBedtime] = useState("23:00");
-  const [energy, setEnergy] = useState(3);
-  const [sunlight, setSunlight] = useState(null);
-  const [mealBefore2, setMealBefore2] = useState(null);
-  const [caffeineCups, setCaffeineCups] = useState(2);
-
-  // Mental
-  const [upskillTime, setUpskillTime] = useState("0");
-  const [clarity, setClarity] = useState(3);
-  const [screenTime, setScreenTime] = useState("0");
-  const [sideHustle, setSideHustle] = useState("none");
-  const [hobbyTime, setHobbyTime] = useState("0");
-  const [pagesRead, setPagesRead] = useState(0);
-
-  // Emotional
-  const [meditationMins, setMeditationMins] = useState(0);
-  const [mood, setMood] = useState(3);
-  const [familyContact, setFamilyContact] = useState("none");
-  const [contactQuality, setContactQuality] = useState(false);
-  const [meaning, setMeaning] = useState(null);
-  const [enjoyable, setEnjoyable] = useState(null);
-  const [gratitude, setGratitude] = useState("");
-
-  // Drains
-  const [cigarettes, setCigarettes] = useState(0);
-  const [alcohol, setAlcohol] = useState(0);
-  const [sugarDay, setSugarDay] = useState(false);
-  const [junkDinner, setJunkDinner] = useState(false);
-  const [hydrated, setHydrated] = useState(true);
-  const [timeWasted, setTimeWasted] = useState(0);
-  const [rumination, setRumination] = useState(1);
-  const [negativeSelfTalk, setNegativeSelfTalk] = useState(false);
-  const [socialMediaTime, setSocialMediaTime] = useState("0");
-  const [masturbation, setMasturbation] = useState(false);
-  const [lateNightPhone, setLateNightPhone] = useState(false);
-  const [reactivity, setReactivity] = useState(false);
-
-  // Re-populate from any existing evening entry
+  // Pre-populate from any existing evening entry
   const today = TODAY();
   const existingEvening = getDayEntries(entries, today).evening || {};
+  const [submitted, setSubmitted] = useState(!!existingEvening.submitted);
+
+  // Physical — pre-fill from existing if present
+  const [workoutMins, setWorkoutMins] = useState(existingEvening.workoutMins??0);
+  const [sleepBucket, setSleepBucket] = useState(existingEvening.sleepBucket??"7-8");
+  const [bedtime, setBedtime] = useState(existingEvening.bedtime??"23:00");
+  const [energy, setEnergy] = useState(existingEvening.energy??3);
+  const [sunlight, setSunlight] = useState(existingEvening.sunlight??null);
+  const [mealBefore2, setMealBefore2] = useState(existingEvening.mealBefore2??null);
+  const [caffeineCups, setCaffeineCups] = useState(existingEvening.caffeineCups??2);
+
+  // Mental
+  const [upskillTime, setUpskillTime] = useState(existingEvening.upskillTime??"0");
+  const [clarity, setClarity] = useState(existingEvening.clarity??3);
+  const [screenTime, setScreenTime] = useState(existingEvening.screenTime??"0");
+  const [sideHustle, setSideHustle] = useState(existingEvening.sideHustle??"none");
+  const [hobbyTime, setHobbyTime] = useState(existingEvening.hobbyTime??"0");
+  const [pagesRead, setPagesRead] = useState(existingEvening.pagesRead??0);
+
+  // Emotional
+  const [meditationMins, setMeditationMins] = useState(existingEvening.meditationMins??0);
+  const [mood, setMood] = useState(existingEvening.mood??3);
+  const [familyContact, setFamilyContact] = useState(existingEvening.familyContact??"none");
+  const [contactQuality, setContactQuality] = useState(existingEvening.contactQuality??false);
+  const [meaning, setMeaning] = useState(existingEvening.meaning??null);
+  const [enjoyable, setEnjoyable] = useState(existingEvening.enjoyable??null);
+  const [gratitude, setGratitude] = useState(existingEvening.gratitude??"");
+
+  // Drains
+  const [cigarettes, setCigarettes] = useState(existingEvening.cigarettes??0);
+  const [alcohol, setAlcohol] = useState(existingEvening.alcohol??0);
+  const [sugarDay, setSugarDay] = useState(existingEvening.sugarDay??false);
+  const [junkDinner, setJunkDinner] = useState(existingEvening.junkDinner??false);
+  const [hydrated, setHydrated] = useState(existingEvening.hydrated??true);
+  const [timeWasted, setTimeWasted] = useState(existingEvening.timeWasted??0);
+  const [rumination, setRumination] = useState(existingEvening.rumination??1);
+  const [negativeSelfTalk, setNegativeSelfTalk] = useState(existingEvening.negativeSelfTalk??false);
+  const [socialMediaTime, setSocialMediaTime] = useState(existingEvening.socialMediaTime??"0");
+  const [masturbation, setMasturbation] = useState(existingEvening.masturbation??false);
+  const [lateNightPhone, setLateNightPhone] = useState(existingEvening.lateNightPhone??false);
+  const [reactivity, setReactivity] = useState(existingEvening.reactivity??false);
 
   // Derive numeric values from time/bucket strings for scoring
   const timeToMins = t => {
