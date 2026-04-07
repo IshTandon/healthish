@@ -617,59 +617,96 @@ function CheckIn({ entries, onSave, goHome }) {
   const currentPeriod = getCurrentPeriod();
   const todayPeriods = getDayEntries(entries, today);
 
-  // Default to current period, or evening if outside windows
   const [activePeriod, setActivePeriod] = useState(currentPeriod || "evening");
-  const existing = todayPeriods[activePeriod] || {};
   const [submitted, setSubmitted] = useState(false);
 
-  // Level selector — only for deep audit (evening)
+  // Level selector — only for evening
   const recentDates = [...new Set(entries.map(e=>e.date))].sort().slice(-3);
   const recentMerged = recentDates.map(d=>mergeDayEntries(getDayEntries(entries,d))).filter(Boolean);
   const avgRecentDrain = recentMerged.length
     ? Math.round(recentMerged.map(e=>scoreDrain(e,entries)).reduce((a,b)=>a+b,0)/recentMerged.length)
     : 0;
   const suggestedLevel = avgRecentDrain >= 41 ? 3 : 2;
-  const [level, setLevel] = useState(existing.checkInLevel || (activePeriod === "morning" ? 1 : activePeriod === "midday" ? 1 : suggestedLevel));
+  const [level, setLevel] = useState(suggestedLevel);
 
   // Physical
-  const [workoutMins, setWorkoutMins] = useState(existing.workoutMins??0);
-  const [sleepBucket, setSleepBucket] = useState(existing.sleepBucket??"7-8");
-  const [bedtime, setBedtime] = useState(existing.bedtime??"23:00");
-  const [energy, setEnergy] = useState(existing.energy??3);
-  const [sunlight, setSunlight] = useState(existing.sunlight??null);
-  const [mealBefore2, setMealBefore2] = useState(existing.mealBefore2??null);
-  const [caffeineCups, setCaffeineCups] = useState(existing.caffeineCups??2);
+  const [workoutMins, setWorkoutMins] = useState(0);
+  const [sleepBucket, setSleepBucket] = useState("7-8");
+  const [bedtime, setBedtime] = useState("23:00");
+  const [energy, setEnergy] = useState(3);
+  const [sunlight, setSunlight] = useState(null);
+  const [mealBefore2, setMealBefore2] = useState(null);
+  const [caffeineCups, setCaffeineCups] = useState(2);
 
   // Mental
-  const [upskillTime, setUpskillTime] = useState(existing.upskillTime??"00:00");
-  const [clarity, setClarity] = useState(existing.clarity??3);
-  const [screenTime, setScreenTime] = useState(existing.screenTime??"00:00");
-  const [sideHustle, setSideHustle] = useState(existing.sideHustle??"none");
-  const [hobbyTime, setHobbyTime] = useState(existing.hobbyTime??existing.chessTime??"0");
-  const [pagesRead, setPagesRead] = useState(existing.pagesRead??0);
+  const [upskillTime, setUpskillTime] = useState("0");
+  const [clarity, setClarity] = useState(3);
+  const [screenTime, setScreenTime] = useState("0");
+  const [sideHustle, setSideHustle] = useState("none");
+  const [hobbyTime, setHobbyTime] = useState("0");
+  const [pagesRead, setPagesRead] = useState(0);
 
   // Emotional
-  const [meditationMins, setMeditationMins] = useState(existing.meditationMins??0);
-  const [mood, setMood] = useState(existing.mood??3);
-  const [familyContact, setFamilyContact] = useState(existing.familyContact??"none");
-  const [contactQuality, setContactQuality] = useState(existing.contactQuality??false);
-  const [meaning, setMeaning] = useState(existing.meaning??null);
-  const [enjoyable, setEnjoyable] = useState(existing.enjoyable??null);
-  const [gratitude, setGratitude] = useState(existing.gratitude??"");
+  const [meditationMins, setMeditationMins] = useState(0);
+  const [mood, setMood] = useState(3);
+  const [familyContact, setFamilyContact] = useState("none");
+  const [contactQuality, setContactQuality] = useState(false);
+  const [meaning, setMeaning] = useState(null);
+  const [enjoyable, setEnjoyable] = useState(null);
+  const [gratitude, setGratitude] = useState("");
 
   // Drains
-  const [cigarettes, setCigarettes] = useState(existing.cigarettes??0);
-  const [alcohol, setAlcohol] = useState(existing.alcohol??0);
-  const [sugarDay, setSugarDay] = useState(existing.sugarDay??false);
-  const [junkDinner, setJunkDinner] = useState(existing.junkDinner??false);
-  const [hydrated, setHydrated] = useState(existing.hydrated??true);
-  const [timeWasted, setTimeWasted] = useState(existing.timeWasted??0);
-  const [rumination, setRumination] = useState(existing.rumination??1);
-  const [negativeSelfTalk, setNegativeSelfTalk] = useState(existing.negativeSelfTalk??false);
-  const [socialMediaTime, setSocialMediaTime] = useState(existing.socialMediaTime??"00:00");
-  const [masturbation, setMasturbation] = useState(existing.masturbation??false);
-  const [lateNightPhone, setLateNightPhone] = useState(existing.lateNightPhone??false);
-  const [reactivity, setReactivity] = useState(existing.reactivity??false);
+  const [cigarettes, setCigarettes] = useState(0);
+  const [alcohol, setAlcohol] = useState(0);
+  const [sugarDay, setSugarDay] = useState(false);
+  const [junkDinner, setJunkDinner] = useState(false);
+  const [hydrated, setHydrated] = useState(true);
+  const [timeWasted, setTimeWasted] = useState(0);
+  const [rumination, setRumination] = useState(1);
+  const [negativeSelfTalk, setNegativeSelfTalk] = useState(false);
+  const [socialMediaTime, setSocialMediaTime] = useState("0");
+  const [masturbation, setMasturbation] = useState(false);
+  const [lateNightPhone, setLateNightPhone] = useState(false);
+  const [reactivity, setReactivity] = useState(false);
+
+  // Re-populate state whenever activePeriod changes
+  useEffect(() => {
+    const e = todayPeriods[activePeriod] || {};
+    setWorkoutMins(e.workoutMins??0);
+    setSleepBucket(e.sleepBucket??"7-8");
+    setBedtime(e.bedtime??"23:00");
+    setEnergy(e.energy??3);
+    setSunlight(e.sunlight??null);
+    setMealBefore2(e.mealBefore2??null);
+    setCaffeineCups(e.caffeineCups??2);
+    setUpskillTime(e.upskillTime??"0");
+    setClarity(e.clarity??3);
+    setScreenTime(e.screenTime??"0");
+    setSideHustle(e.sideHustle??"none");
+    setHobbyTime(e.hobbyTime??e.chessTime??"0");
+    setPagesRead(e.pagesRead??0);
+    setMeditationMins(e.meditationMins??0);
+    setMood(e.mood??3);
+    setFamilyContact(e.familyContact??"none");
+    setContactQuality(e.contactQuality??false);
+    setMeaning(e.meaning??null);
+    setEnjoyable(e.enjoyable??null);
+    setGratitude(e.gratitude??"");
+    setCigarettes(e.cigarettes??0);
+    setAlcohol(e.alcohol??0);
+    setSugarDay(e.sugarDay??false);
+    setJunkDinner(e.junkDinner??false);
+    setHydrated(e.hydrated??true);
+    setTimeWasted(e.timeWasted??0);
+    setRumination(e.rumination??1);
+    setNegativeSelfTalk(e.negativeSelfTalk??false);
+    setSocialMediaTime(e.socialMediaTime??"0");
+    setMasturbation(e.masturbation??false);
+    setLateNightPhone(e.lateNightPhone??false);
+    setReactivity(e.reactivity??false);
+    setSubmitted(false);
+    if (activePeriod === "evening" && e.checkInLevel) setLevel(e.checkInLevel);
+  }, [activePeriod]); // eslint-disable-line
 
   // Derive numeric values from time/bucket strings for scoring
   const timeToMins = t => {
