@@ -669,7 +669,6 @@ function MorningForm({ entries, onSave, goHome, activePeriod, setActivePeriod, t
   const [bedtime, setBedtime] = useState(existing.bedtime ?? "23:00");
   const [energy, setEnergy] = useState(existing.energy ?? 3);
   const [sunlight, setSunlight] = useState(existing.sunlight ?? null);
-  const [mealBefore2, setMealBefore2] = useState(existing.mealBefore2 ?? null);
 
   const sleepBucketToHrs = b => ({"under-5":4,"5-6":5.5,"6-7":6.5,"7-8":7.5,"8-9":8.5,"9+":9.5}[b]??7.5);
   const bedtimeToHr = t => { const [h] = (t||"23:00").split(":").map(Number); return h>=20?h:h+24; };
@@ -679,15 +678,19 @@ function MorningForm({ entries, onSave, goHome, activePeriod, setActivePeriod, t
       date:today, period:"morning", submitted:true,
       sleepBucket, sleepHrs:sleepBucketToHrs(sleepBucket),
       bedtime, bedtimeHr:bedtimeToHr(bedtime),
-      energy, sunlight, mealBefore2,
+      energy, sunlight,
     });
     setSubmitted(true);
   };
 
+  const currentPeriod = getCurrentPeriod();
+  const isActive = currentPeriod === "morning";
+  const isDone = !!existing.submitted;
+
   if (submitted) return (
-    <div className="scroll" style={{padding:"52px 16px 16px",textAlign:"center"}}>
+    <div className="scroll" style={{padding:"0 16px 16px"}}>
       <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
-      <div style={{padding:"40px 0"}}>
+      <div style={{textAlign:"center",padding:"40px 0"}}>
         <div style={{fontFamily:"var(--serif)",fontSize:28,marginBottom:10,color:"var(--ink)"}}>🌅 Logged.</div>
         <div style={{fontSize:14,color:"var(--muted)",marginBottom:24}}>Morning captured. Check back at 2pm.</div>
         <button style={{background:"var(--accent)",color:"#fff",padding:"12px 28px",borderRadius:"var(--r)",fontSize:14}} onClick={goHome}>Back to dashboard</button>
@@ -700,24 +703,31 @@ function MorningForm({ entries, onSave, goHome, activePeriod, setActivePeriod, t
       <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
       <div style={{padding:"0 16px 8px"}}>
         <div style={{fontFamily:"var(--serif)",fontSize:20,marginBottom:2}}>🌅 Morning check-in</div>
-        <div style={{fontSize:12,color:"var(--muted)"}}>Sleep + energy · 60 seconds</div>
+        <div style={{fontSize:12,color:"var(--muted)"}}>Sleep + energy · 8am–12pm</div>
       </div>
-      <div className="section">
+      {!isActive && !isDone && (
+        <div style={{margin:"0 16px 12px",padding:"10px 14px",background:"var(--bg2)",border:"0.5px solid var(--border)",borderRadius:"var(--r2)",fontSize:12,color:"var(--muted)"}}>
+          Opens at 8am. You can preview the questions below.
+        </div>
+      )}
+      <div className="section" style={{opacity: isActive || isDone ? 1 : 0.5}}>
         <div className="ci-block">
-          <SleepBucketField val={sleepBucket} setVal={setSleepBucket}/>
-          <TimePickerField label="Bedtime last night" val={bedtime} setVal={setBedtime} hint="when you got into bed"/>
-          <ScalePickerField label="Physical energy right now" val={energy} setVal={setEnergy} low="Depleted" high="Fully charged"/>
+          <SleepBucketField val={sleepBucket} setVal={isActive ? setSleepBucket : ()=>{}}/>
+          <TimePickerField label="Bedtime last night" val={bedtime} setVal={isActive ? setBedtime : ()=>{}} hint="when you got into bed"/>
+          <ScalePickerField label="Physical energy right now" val={energy} setVal={isActive ? setEnergy : ()=>{}} low="Depleted" high="Fully charged"/>
           <div className="ci-row">
             <div className="ci-q"><span>Morning sunlight?</span></div>
-            <YesNoField val={sunlight} setVal={setSunlight}/>
-          </div>
-          <div className="ci-row">
-            <div className="ci-q"><span>First meal before 2pm planned?</span></div>
-            <YesNoField val={mealBefore2} setVal={setMealBefore2}/>
+            <YesNoField val={sunlight} setVal={isActive ? setSunlight : ()=>{}}/>
           </div>
         </div>
       </div>
-      <button className="submit-btn" onClick={handleSave}>Log morning →</button>
+      {isActive ? (
+        <button className="submit-btn" onClick={handleSave}>Log morning →</button>
+      ) : (
+        <div style={{margin:"12px 16px 0",padding:"13px",background:"var(--bg2)",border:"0.5px solid var(--border)",borderRadius:"var(--r)",fontSize:13,color:"var(--muted)",textAlign:"center"}}>
+          {isDone ? "✓ Morning logged" : "Submit opens at 8am"}
+        </div>
+      )}
     </div>
   );
 }
@@ -732,6 +742,7 @@ function MiddayForm({ entries, onSave, goHome, activePeriod, setActivePeriod, to
   const [mood, setMood] = useState(existing.mood ?? 3);
   const [rumination, setRumination] = useState(existing.rumination ?? 1);
   const [upskillTime, setUpskillTime] = useState(existing.upskillTime ?? "0");
+  const [mealBefore2, setMealBefore2] = useState(existing.mealBefore2 ?? null);
 
   const timeToMins = t => { if(!t||t==="0") return 0; const p=String(t).split(":").map(Number); return p.length===2?p[0]*60+p[1]:p[0]*60; };
   const timeToHrs = t => timeToMins(t)/60;
@@ -741,14 +752,19 @@ function MiddayForm({ entries, onSave, goHome, activePeriod, setActivePeriod, to
       date:today, period:"midday", submitted:true,
       clarity, screenTime, screenTimeHrs:timeToHrs(screenTime),
       mood, rumination, upskillTime, upskillHrs:timeToHrs(upskillTime),
+      mealBefore2,
     });
     setSubmitted(true);
   };
 
+  const currentPeriod = getCurrentPeriod();
+  const isActive = currentPeriod === "midday";
+  const isDone = !!existing.submitted;
+
   if (submitted) return (
-    <div className="scroll" style={{padding:"52px 16px 16px",textAlign:"center"}}>
+    <div className="scroll" style={{padding:"0 16px 16px"}}>
       <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
-      <div style={{padding:"40px 0"}}>
+      <div style={{textAlign:"center",padding:"40px 0"}}>
         <div style={{fontFamily:"var(--serif)",fontSize:28,marginBottom:10,color:"var(--ink)"}}>☀️ Logged.</div>
         <div style={{fontSize:14,color:"var(--muted)",marginBottom:24}}>Midday captured. Evening check-in opens at 8pm.</div>
         <button style={{background:"var(--accent)",color:"#fff",padding:"12px 28px",borderRadius:"var(--r)",fontSize:14}} onClick={goHome}>Back to dashboard</button>
@@ -761,22 +777,37 @@ function MiddayForm({ entries, onSave, goHome, activePeriod, setActivePeriod, to
       <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
       <div style={{padding:"0 16px 8px"}}>
         <div style={{fontFamily:"var(--serif)",fontSize:20,marginBottom:2}}>☀️ Midday check-in</div>
-        <div style={{fontSize:12,color:"var(--muted)"}}>Focus + drift check · 60 seconds</div>
+        <div style={{fontSize:12,color:"var(--muted)"}}>Focus + drift check · 2pm–6pm</div>
       </div>
-      <div className="section">
+      {!isActive && !isDone && (
+        <div style={{margin:"0 16px 12px",padding:"10px 14px",background:"var(--bg2)",border:"0.5px solid var(--border)",borderRadius:"var(--r2)",fontSize:12,color:"var(--muted)"}}>
+          Opens at 2pm. You can preview the questions below.
+        </div>
+      )}
+      <div className="section" style={{opacity: isActive || isDone ? 1 : 0.5}}>
         <div className="ci-block">
-          <ScalePickerField label="Mental clarity right now" val={clarity} setVal={setClarity} low="Noise everywhere" high="Laser clarity"/>
+          <ScalePickerField label="Mental clarity right now" val={clarity} setVal={isActive ? setClarity : ()=>{}} low="Noise everywhere" high="Laser clarity"/>
           <BucketPickerField label="Screen time so far" target="Target: under 2 hrs total"
-            val={screenTime} setVal={setScreenTime} color="var(--accent)"
+            val={screenTime} setVal={isActive ? setScreenTime : ()=>{}} color="var(--accent)"
             buckets={[{v:"0",l:"None"},{v:"0:30",l:"30 min"},{v:"1:00",l:"1 hr"},{v:"2:00",l:"2 hrs"},{v:"3:00",l:"3 hrs"},{v:"5:00",l:"5 hrs+"}]}/>
-          <ScalePickerField label="Overall mood" val={mood} setVal={setMood} low="Hollow" high="Invested"/>
-          <ScalePickerField label="Rumination level" val={rumination} setVal={setRumination} low="Quiet mind" high="Consumed"/>
+          <ScalePickerField label="Overall mood" val={mood} setVal={isActive ? setMood : ()=>{}} low="Hollow" high="Invested"/>
+          <ScalePickerField label="Rumination level" val={rumination} setVal={isActive ? setRumination : ()=>{}} low="Quiet mind" high="Consumed"/>
           <BucketPickerField label="Upskill time so far" target="Weekdays: 2 hrs total"
-            val={upskillTime} setVal={setUpskillTime} color="var(--purple)"
+            val={upskillTime} setVal={isActive ? setUpskillTime : ()=>{}} color="var(--purple)"
             buckets={[{v:"0",l:"None"},{v:"0:30",l:"30 min"},{v:"1:00",l:"1 hr"},{v:"2:00",l:"2 hrs"},{v:"4:00",l:"4 hrs"},{v:"6:00",l:"6 hrs+"}]}/>
+          <div className="ci-row">
+            <div className="ci-q"><span>First real meal before 2pm?</span></div>
+            <YesNoField val={mealBefore2} setVal={isActive ? setMealBefore2 : ()=>{}}/>
+          </div>
         </div>
       </div>
-      <button className="submit-btn" onClick={handleSave}>Log midday →</button>
+      {isActive ? (
+        <button className="submit-btn" onClick={handleSave}>Log midday →</button>
+      ) : (
+        <div style={{margin:"12px 16px 0",padding:"13px",background:"var(--bg2)",border:"0.5px solid var(--border)",borderRadius:"var(--r)",fontSize:13,color:"var(--muted)",textAlign:"center"}}>
+          {isDone ? "✓ Midday logged" : "Submit opens at 2pm"}
+        </div>
+      )}
     </div>
   );
 }
@@ -871,11 +902,6 @@ function EveningForm({ entries, onSave, goHome, activePeriod, setActivePeriod, t
 
   // Physical — pre-fill from existing if present
   const [workoutMins, setWorkoutMins] = useState(existingEvening.workoutMins??0);
-  const [sleepBucket, setSleepBucket] = useState(existingEvening.sleepBucket??"7-8");
-  const [bedtime, setBedtime] = useState(existingEvening.bedtime??"23:00");
-  const [energy, setEnergy] = useState(existingEvening.energy??3);
-  const [sunlight, setSunlight] = useState(existingEvening.sunlight??null);
-  const [mealBefore2, setMealBefore2] = useState(existingEvening.mealBefore2??null);
   const [caffeineCups, setCaffeineCups] = useState(existingEvening.caffeineCups??2);
 
   // Mental
@@ -922,10 +948,7 @@ function EveningForm({ entries, onSave, goHome, activePeriod, setActivePeriod, t
   const handleSave = async () => {
     const entry = {
       date: today, period: "evening", submitted: true, checkInLevel: level,
-      workoutMins,
-      sleepBucket, sleepHrs: sleepBucketToHrs(sleepBucket),
-      bedtime, bedtimeHr: bedtimeToHr(bedtime),
-      energy, sunlight, mealBefore2, caffeineCups,
+      workoutMins, caffeineCups,
       upskillTime, upskillHrs: timeToHrs(upskillTime),
       clarity,
       screenTime, screenTimeHrs: timeToHrs(screenTime),
@@ -1125,25 +1148,35 @@ function EveningForm({ entries, onSave, goHome, activePeriod, setActivePeriod, t
   }
 
   // Evening level header
+  const isActive = getCurrentPeriod() === "evening";
+  const isDone = !!existingEvening.submitted;
+
   const EveningHeader = () => (
     <div style={{padding:"0 16px 0"}}>
       <div style={{fontFamily:"var(--serif)",fontSize:20,marginBottom:2}}>🌙 Evening check-in</div>
       <div style={{fontSize:12,color:"var(--muted)",marginBottom:12}}>
-        {level===1?"5 signals · 60 seconds":level===2?"Core signals · 2-3 min":"Full picture · 5 min"}
+        {level===1?"5 signals · 60 seconds":level===2?"Core signals · 2-3 min":"Full picture · 5 min"} · 8pm–12am
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:14}}>
-        {[{l:1,label:"Pulse",sub:"60 sec"},{l:2,label:"Check-in",sub:"2-3 min"},{l:3,label:"Deep",sub:"5 min"}].map(({l,label,sub})=>(
-          <div key={l} onClick={()=>setLevel(l)} style={{
-            padding:"8px 4px",borderRadius:"var(--r2)",textAlign:"center",cursor:"pointer",transition:"all .15s",
-            background:level===l?"var(--accent)":"var(--bg2)",
-            border:`0.5px solid ${level===l?"var(--accent)":"var(--border)"}`,
-          }}>
-            <div style={{fontSize:11,fontWeight:500,color:level===l?"#fff":"var(--ink2)"}}>{label}</div>
-            <div style={{fontSize:9,color:level===l?"rgba(255,255,255,.7)":"var(--muted)",marginTop:1}}>{sub}</div>
-          </div>
-        ))}
-      </div>
-      {level===3 && avgRecentDrain>=41 && (
+      {!isActive && !isDone && (
+        <div style={{marginBottom:12,padding:"10px 14px",background:"var(--bg2)",border:"0.5px solid var(--border)",borderRadius:"var(--r2)",fontSize:12,color:"var(--muted)"}}>
+          Opens at 8pm. You can preview the questions below.
+        </div>
+      )}
+      {isActive && (
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:14}}>
+          {[{l:1,label:"Pulse",sub:"60 sec"},{l:2,label:"Check-in",sub:"2-3 min"},{l:3,label:"Deep",sub:"5 min"}].map(({l,label,sub})=>(
+            <div key={l} onClick={()=>setLevel(l)} style={{
+              padding:"8px 4px",borderRadius:"var(--r2)",textAlign:"center",cursor:"pointer",transition:"all .15s",
+              background:level===l?"var(--accent)":"var(--bg2)",
+              border:`0.5px solid ${level===l?"var(--accent)":"var(--border)"}`,
+            }}>
+              <div style={{fontSize:11,fontWeight:500,color:level===l?"#fff":"var(--ink2)"}}>{label}</div>
+              <div style={{fontSize:9,color:level===l?"rgba(255,255,255,.7)":"var(--muted)",marginTop:1}}>{sub}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {level===3 && avgRecentDrain>=41 && isActive && (
         <div style={{background:"#2a1212",border:"0.5px solid #c8553d44",borderRadius:"var(--r2)",padding:"10px 12px",marginBottom:12,fontSize:12,color:"#c8553d",lineHeight:1.5}}>
           ▽ Drain elevated recently. Deep audit recommended.
         </div>
@@ -1151,30 +1184,37 @@ function EveningForm({ entries, onSave, goHome, activePeriod, setActivePeriod, t
     </div>
   );
 
+  const SubmitOrLock = ({label}) => isActive ? (
+    <button className="submit-btn" onClick={handleSave}>{label}</button>
+  ) : (
+    <div style={{margin:"12px 16px 0",padding:"13px",background:"var(--bg2)",border:"0.5px solid var(--border)",borderRadius:"var(--r)",fontSize:13,color:"var(--muted)",textAlign:"center"}}>
+      {isDone ? "✓ Evening logged" : "Submit opens at 8pm"}
+    </div>
+  );
+
   // ── LEVEL 1: PULSE ─────────────────────────────────────────────
   if (level === 1) return (
     <div className="scroll" style={{padding:"0 0 16px"}}>
       <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/><EveningHeader/>
-      <div className="section" style={{marginTop:8}}>
+      <div className="section" style={{marginTop:8, opacity: isActive || isDone ? 1 : 0.5}}>
         <div className="ci-block">
-          <SleepBucket val={sleepBucket} setVal={setSleepBucket}/>
-          <ScalePicker label="Physical energy" val={energy} setVal={setEnergy} low="Depleted" high="Fully charged"/>
-          <ScalePicker label="Overall mood" val={mood} setVal={setMood} low="Hollow" high="Invested"/>
+          <WorkoutBucket val={workoutMins} setVal={isActive ? setWorkoutMins : ()=>{}}/>
+          <ScalePicker label="Overall mood" val={mood} setVal={isActive ? setMood : ()=>{}} low="Hollow" high="Fully invested"/>
           <div className="ci-row">
             <div className="ci-q" style={{marginBottom:10}}><span>Did something meaningful get done?</span></div>
-            <YesNo val={meaning} setVal={setMeaning}/>
+            <YesNo val={meaning} setVal={isActive ? setMeaning : ()=>{}}/>
           </div>
           <div className="ci-row">
             <div className="ci-q" style={{marginBottom:10}}><span>Genuine conversation with someone you love?</span></div>
             <div className="ci-chips">
               {[["one","Yes"],["none","No"]].map(([v,l])=>(
-                <div key={v} className={`chip ${familyContact===v?"selected":""}`} onClick={()=>setFamilyContact(v)}>{l}</div>
+                <div key={v} className={`chip ${familyContact===v?"selected":""}`} onClick={()=>isActive && setFamilyContact(v)}>{l}</div>
               ))}
             </div>
           </div>
         </div>
       </div>
-      <button className="submit-btn" onClick={handleSave}>Save pulse →</button>
+      <SubmitOrLock label="Save pulse →"/>
     </div>
   );
 
@@ -1182,16 +1222,12 @@ function EveningForm({ entries, onSave, goHome, activePeriod, setActivePeriod, t
   if (level === 2) return (
     <div className="scroll" style={{padding:"0 0 16px"}}>
       <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/><EveningHeader/>
+      <div style={{opacity: isActive || isDone ? 1 : 0.5, pointerEvents: isActive ? "auto" : "none"}}>
       <div className="section" style={{marginTop:8}}>
         <div className="section-title">Physical</div>
         <div className="ci-block">
           <WorkoutBucket val={workoutMins} setVal={setWorkoutMins}/>
-          <SleepBucket val={sleepBucket} setVal={setSleepBucket}/>
-          <ScalePicker label="Physical energy" val={energy} setVal={setEnergy} low="Running on fumes" high="Fully charged"/>
-          <div className="ci-row">
-            <div className="ci-q"><span>Morning sunlight (before 10am)</span></div>
-            <YesNo val={sunlight} setVal={setSunlight}/>
-          </div>
+          <Stepper label="Caffeine intake" val={caffeineCups} setVal={setCaffeineCups} max={10} unit=" cups"/>
         </div>
       </div>
       <div className="section" style={{marginTop:12}}>
@@ -1234,7 +1270,8 @@ function EveningForm({ entries, onSave, goHome, activePeriod, setActivePeriod, t
           <ScalePicker label="Rumination (circular thinking)" val={rumination} setVal={setRumination} low="Quiet mind" high="Consumed"/>
         </div>
       </div>
-      <button className="submit-btn" onClick={handleSave}>Save check-in →</button>
+      </div>{/* end opacity wrapper */}
+      <SubmitOrLock label="Save check-in →"/>
     </div>
   );
 
@@ -1242,23 +1279,12 @@ function EveningForm({ entries, onSave, goHome, activePeriod, setActivePeriod, t
   return (
     <div className="scroll" style={{padding:"0 0 16px"}}>
       <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/><EveningHeader/>
-
+      <div style={{opacity: isActive || isDone ? 1 : 0.5, pointerEvents: isActive ? "auto" : "none"}}>
       {/* PHYSICAL */}
       <div className="section" style={{marginTop:8}}>
         <div className="section-title">Physical</div>
         <div className="ci-block">
           <WorkoutBucket val={workoutMins} setVal={setWorkoutMins}/>
-          <SleepBucket val={sleepBucket} setVal={setSleepBucket}/>
-          <TimePicker label="Bedtime last night" val={bedtime} setVal={setBedtime} hint="when you got into bed"/>
-          <ScalePicker label="Physical energy" val={energy} setVal={setEnergy} low="Running on fumes" high="Fully charged"/>
-          <div className="ci-row">
-            <div className="ci-q"><span>Morning sunlight (before 10am)</span></div>
-            <YesNo val={sunlight} setVal={setSunlight}/>
-          </div>
-          <div className="ci-row">
-            <div className="ci-q"><span>First real meal before 2pm</span></div>
-            <YesNo val={mealBefore2} setVal={setMealBefore2}/>
-          </div>
           <Stepper label="Caffeine intake" val={caffeineCups} setVal={setCaffeineCups} max={10} unit=" cups"/>
         </div>
       </div>
@@ -1460,9 +1486,8 @@ function EveningForm({ entries, onSave, goHome, activePeriod, setActivePeriod, t
         </div>
       </div>
 
-      <button className="submit-btn" onClick={handleSave}>
-        Save today's entry
-      </button>
+      </div>{/* end opacity wrapper */}
+      <SubmitOrLock label="Save today's entry →"/>
     </div>
   );
 }
