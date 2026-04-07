@@ -1538,19 +1538,19 @@ function Dashboard({ entries, profile, setTab, icp }) {
 
   // signals
   const signals = [];
-  if (todayEntry) {
+  if (effectiveTodayEntry) {
     if (effectiveDScore >= 41) signals.push({color:"#c8553d", text:`Drain is heavy today (${dScore}/100). Multiple drains compounding.`});
     else if (effectiveDScore >= 16) signals.push({color:"#c4840a", text:`Leaking today — drain score ${effectiveDScore}. Check what's pulling you down.`});
     if (effectiveMScore < 50) signals.push({color:"#c8553d", text:`Mental score is ${effectiveMScore}%. Screen time or upskilling gap is the likely cause.`});
-    if (!todayEntry.familyContact || todayEntry.familyContact==="none") {
+    if (!effectiveTodayEntry.familyContact || effectiveTodayEntry.familyContact==="none") {
       const streak = recentEntries.filter(e=>!e.familyContact||e.familyContact==="none").length;
       if (streak>=3) signals.push({color:"#c8553d", text:`${streak} days without a genuine conversation with someone you love. Isolation pattern building.`});
     }
     if (effectivePScore >= 80) signals.push({color:"#3d8c6c", text:`Strong physical day. Body is doing its job.`});
     if (effectiveEScore >= 80) signals.push({color:"#3d8c6c", text:`Emotional baseline is solid at ${effectiveEScore}%.`});
-    if ((todayEntry.upskillHrs||0) >= 2) signals.push({color:"#3d8c6c", text:`Upskilling target hit. Forward motion is real.`});
+    if ((effectiveTodayEntry.upskillHrs||0) >= 2) signals.push({color:"#3d8c6c", text:`Upskilling target hit. Forward motion is real.`});
   }
-  if (!signals.length && !todayEntry) signals.push({color:"#7a7268", text:"No check-in yet today. Tap the + tab to log your day."});
+  if (!signals.length && !effectiveTodayEntry) signals.push({color:"#7a7268", text:"No check-in yet today. Tap the + tab to log your day."});
 
   const recs = getRecommendations(effectiveTodayEntry || todayEntry, recentEntries, effectivePScore, effectiveMScore, effectiveEScore, effectiveDScore, icp);
 
@@ -2530,12 +2530,13 @@ export default function HealthIsh() {
       const ic = await storageGet(KEYS.icp);
       let en = await storageGet(KEYS.entries) || [];
 
-      // Migrate legacy entries (no period field) → tag as "evening"
-      const migrated = en.map(e => e.period ? e : { ...e, period: "evening" });
-      if (migrated.some((e,i) => !en[i].period)) {
-        await storageSet(KEYS.entries, migrated);
-        en = migrated;
-      }
+      // Migrate: any entry without a period field gets tagged as "evening"
+      let needsSave = false;
+      en = en.map(e => {
+        if (!e.period) { needsSave = true; return { ...e, period: "evening" }; }
+        return e;
+      });
+      if (needsSave) await storageSet(KEYS.entries, en);
 
       setOnboarded(!!ob);
       setProfile(pr||null);
