@@ -6,6 +6,7 @@ const KEYS = {
   profile:    "healthish:profile",
   onboarded:  "healthish:onboarded",
   icp:        "healthish:icp",
+  splashSeen: "healthish:splashSeen",
 };
 
 /* ─── ONESIGNAL ─────────────────────────────────────────────────── */
@@ -2579,6 +2580,136 @@ const GOALS = [
   { id:"focus_deep",  label:"Improve deep focus",          sub:"More output in less time" },
 ];
 
+/* ─── SPLASH ONBOARDING ─────────────────────────────────────────── */
+function SplashOnboarding({ onDone }) {
+  const [screen, setScreen] = useState(0);
+  const [fading, setFading] = useState(false);
+
+  const screens = [
+    {
+      icon: null,
+      isWelcome: true,
+      title: "HealthIsh",
+      sub: "honest. not perfect.",
+      cta: "Get started",
+    },
+    {
+      icon: "📊",
+      title: "Three check-ins a day",
+      sub: "Morning. Midday. Evening.\nEach one under 2 minutes.",
+      cta: "Next",
+    },
+    {
+      icon: "🧠",
+      title: "See what's actually happening",
+      sub: "Physical. Mental. Emotional.\nDrain. All in one place.",
+      cta: "Next",
+    },
+    {
+      icon: "⚡",
+      title: "Direct your energy",
+      sub: "Not a wellness app.\nA command centre.",
+      cta: "Let's go →",
+    },
+  ];
+
+  const goNext = () => {
+    if (screen === screens.length - 1) { onDone(); return; }
+    setFading(true);
+    setTimeout(() => { setScreen(s => s + 1); setFading(false); }, 220);
+  };
+
+  const current = screens[screen];
+
+  return (
+    <div style={{
+      height:"100vh", display:"flex", flexDirection:"column",
+      background:"var(--bg)", overflow:"hidden",
+      padding:"0 32px",
+    }}>
+      {/* Progress dots */}
+      <div style={{
+        display:"flex", gap:6, justifyContent:"center",
+        paddingTop:60, paddingBottom:0,
+        opacity: screen === 0 ? 0 : 1,
+        transition:"opacity .3s",
+      }}>
+        {screens.slice(1).map((_,i) => (
+          <div key={i} style={{
+            width: i === screen - 1 ? 20 : 6,
+            height:6, borderRadius:3,
+            background: i === screen - 1 ? "var(--accent)" : "var(--border2)",
+            transition:"all .3s ease",
+          }}/>
+        ))}
+      </div>
+
+      {/* Content */}
+      <div style={{
+        flex:1, display:"flex", flexDirection:"column",
+        justifyContent:"center", alignItems:"center",
+        textAlign:"center",
+        opacity: fading ? 0 : 1,
+        transform: fading ? "translateY(10px)" : "translateY(0)",
+        transition:"opacity .2s ease, transform .2s ease",
+      }}>
+        {current.isWelcome ? (
+          <>
+            {/* Logo mark */}
+            <div style={{
+              width:72, height:72, borderRadius:20,
+              background:"var(--accent)", display:"flex",
+              alignItems:"center", justifyContent:"center",
+              marginBottom:28, fontSize:32,
+              boxShadow:"0 8px 32px rgba(196,132,10,0.3)",
+            }}>H</div>
+            <div style={{
+              fontFamily:"var(--serif)", fontSize:38,
+              color:"var(--ink)", marginBottom:10, letterSpacing:"-0.5px",
+            }}>HealthIsh</div>
+            <div style={{
+              fontSize:15, color:"var(--muted)",
+              letterSpacing:"0.08em", textTransform:"lowercase",
+            }}>{current.sub}</div>
+          </>
+        ) : (
+          <>
+            <div style={{fontSize:52, marginBottom:32, lineHeight:1}}>{current.icon}</div>
+            <div style={{
+              fontFamily:"var(--serif)", fontSize:26,
+              color:"var(--ink)", marginBottom:16,
+              lineHeight:1.2, letterSpacing:"-0.3px",
+            }}>{current.title}</div>
+            <div style={{
+              fontSize:15, color:"var(--muted)",
+              lineHeight:1.7, whiteSpace:"pre-line",
+            }}>{current.sub}</div>
+          </>
+        )}
+      </div>
+
+      {/* CTA */}
+      <div style={{paddingBottom:52}}>
+        <button onClick={goNext} style={{
+          width:"100%", padding:16,
+          background: screen === screens.length - 1 ? "var(--accent)" : "var(--accent)",
+          color:"#fff", borderRadius:"var(--r)",
+          fontSize:16, fontWeight:600, letterSpacing:"0.01em",
+          boxShadow: screen === 0 ? "0 4px 24px rgba(196,132,10,0.35)" : "none",
+          transition:"all .2s",
+        }}>{current.cta}</button>
+        {screen > 0 && screen < screens.length - 1 && (
+          <div onClick={onDone} style={{
+            textAlign:"center", marginTop:16,
+            fontSize:13, color:"var(--muted)", cursor:"pointer",
+          }}>Skip</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── ICP ONBOARDING ─────────────────────────────────────────────── */
 function ICPOnboarding({ onDone }) {
   const [step, setStep]         = useState(1);
   const [struggles, setStruggles] = useState([]);
@@ -2732,13 +2863,15 @@ export default function HealthIsh() {
   const [entries, setEntries] = useState([]);
   const [tab, setTab] = useState("home");
   const [editingProfile, setEditingProfile] = useState(false);
-  const [icp, setIcp] = useState(undefined); // undefined = loading
+  const [icp, setIcp] = useState(undefined);
+  const [splashSeen, setSplashSeen] = useState(null);
 
   useEffect(()=>{
     (async()=>{
       const ob = await storageGet(KEYS.onboarded);
       const pr = await storageGet(KEYS.profile);
       const ic = await storageGet(KEYS.icp);
+      const sp = await storageGet(KEYS.splashSeen);
       let en = await storageGet(KEYS.entries) || [];
 
       // Migrate: any entry without a period field gets tagged as "evening"
@@ -2753,6 +2886,7 @@ export default function HealthIsh() {
       setProfile(pr||null);
       setEntries(en);
       setIcp(ic||null);
+      setSplashSeen(!!sp || !!ob); // existing users skip splash
     })();
 
     // Initialise OneSignal after a short delay to let SDK load
@@ -2782,8 +2916,21 @@ export default function HealthIsh() {
   };
 
   // Still loading
-  if (onboarded === null || icp === undefined) {
+  if (onboarded === null || icp === undefined || splashSeen === null) {
     return <div style={{background:"var(--bg)",minHeight:"100vh"}}/>;
+  }
+
+  // Splash onboarding — shown once to new users only
+  if (!splashSeen) {
+    return (
+      <>
+        <style dangerouslySetInnerHTML={{__html:G}}/>
+        <SplashOnboarding onDone={async () => {
+          await storageSet(KEYS.splashSeen, true);
+          setSplashSeen(true);
+        }}/>
+      </>
+    );
   }
 
   // First-time profile setup
