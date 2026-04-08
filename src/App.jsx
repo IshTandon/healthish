@@ -2655,14 +2655,12 @@ function SplashOnboarding({ onDone }) {
       }}>
         {current.isWelcome ? (
           <>
-            {/* Logo mark */}
-            <div style={{
+            {/* App icon */}
+            <img src="/icon-192.png" alt="HealthIsh" style={{
               width:72, height:72, borderRadius:20,
-              background:"var(--accent)", display:"flex",
-              alignItems:"center", justifyContent:"center",
-              marginBottom:28, fontSize:32,
+              marginBottom:28,
               boxShadow:"0 8px 32px rgba(196,132,10,0.3)",
-            }}>H</div>
+            }}/>
             <div style={{
               fontFamily:"var(--serif)", fontSize:38,
               color:"var(--ink)", marginBottom:10, letterSpacing:"-0.5px",
