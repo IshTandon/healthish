@@ -687,17 +687,6 @@ function MorningForm({ entries, onSave, goHome, activePeriod, setActivePeriod, t
   const isActive = currentPeriod === "morning";
   const isDone = !!existing.submitted;
 
-  if (submitted) return (
-    <div className="scroll" style={{padding:"0 16px 16px"}}>
-      <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
-      <div style={{textAlign:"center",padding:"40px 0"}}>
-        <div style={{fontFamily:"var(--serif)",fontSize:28,marginBottom:10,color:"var(--ink)"}}>🌅 Logged.</div>
-        <div style={{fontSize:14,color:"var(--muted)",marginBottom:24}}>Morning captured. Check back at 2pm.</div>
-        <button style={{background:"var(--accent)",color:"#fff",padding:"12px 28px",borderRadius:"var(--r)",fontSize:14}} onClick={goHome}>Back to dashboard</button>
-      </div>
-    </div>
-  );
-
   return (
     <div className="scroll" style={{padding:"0 0 16px"}}>
       <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
@@ -760,17 +749,6 @@ function MiddayForm({ entries, onSave, goHome, activePeriod, setActivePeriod, to
   const currentPeriod = getCurrentPeriod();
   const isActive = currentPeriod === "midday";
   const isDone = !!existing.submitted;
-
-  if (submitted) return (
-    <div className="scroll" style={{padding:"0 16px 16px"}}>
-      <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
-      <div style={{textAlign:"center",padding:"40px 0"}}>
-        <div style={{fontFamily:"var(--serif)",fontSize:28,marginBottom:10,color:"var(--ink)"}}>☀️ Logged.</div>
-        <div style={{fontSize:14,color:"var(--muted)",marginBottom:24}}>Midday captured. Evening check-in opens at 8pm.</div>
-        <button style={{background:"var(--accent)",color:"#fff",padding:"12px 28px",borderRadius:"var(--r)",fontSize:14}} onClick={goHome}>Back to dashboard</button>
-      </div>
-    </div>
-  );
 
   return (
     <div className="scroll" style={{padding:"0 0 16px"}}>
@@ -1130,19 +1108,6 @@ function EveningForm({ entries, onSave, goHome, activePeriod, setActivePeriod, t
       <div className="toggle-row">
         <div className={`tog ${val===true?"on":""}`} onClick={()=>setVal(true)}>Yes</div>
         <div className={`tog ${val===false&&val!==null?"off":""}`} onClick={()=>setVal(false)}>No</div>
-      </div>
-    );
-  }
-
-  if (submitted) {
-    return (
-      <div className="scroll" style={{padding:"0 16px 16px"}}>
-        <PeriodTabs activePeriod={activePeriod} setActivePeriod={setActivePeriod} todayPeriods={todayPeriods}/>
-        <div style={{textAlign:"center",padding:"40px 0"}}>
-          <div style={{fontFamily:"var(--serif)",fontSize:28,marginBottom:10,color:"var(--ink)"}}>🌙 Day closed.</div>
-          <div style={{fontSize:14,color:"var(--muted)",lineHeight:1.6,marginBottom:24}}>See you tomorrow.</div>
-          <button style={{background:"var(--accent)",color:"#fff",padding:"12px 28px",borderRadius:"var(--r)",fontSize:14}} onClick={goHome}>Back to dashboard</button>
-        </div>
       </div>
     );
   }
@@ -2616,11 +2581,22 @@ const GOALS = [
 
 function ICPOnboarding({ onDone }) {
   const [step, setStep]         = useState(1);
-  const [struggles, setStruggles] = useState([]); // array — multi-select
-  const [goals, setGoals]       = useState([]);   // array — multi-select
+  const [struggles, setStruggles] = useState([]);
+  const [goals, setGoals]       = useState([]);
+  const [animating, setAnimating] = useState(false);
 
   const toggle = (arr, setArr, id) => {
     setArr(arr.includes(id) ? arr.filter(x=>x!==id) : [...arr, id]);
+  };
+
+  const goToStep2 = () => {
+    setAnimating(true);
+    setTimeout(() => { setStep(2); setAnimating(false); }, 220);
+  };
+
+  const goToStep1 = () => {
+    setAnimating(true);
+    setTimeout(() => { setStep(1); setAnimating(false); }, 220);
   };
 
   const handleDone = async () => {
@@ -2666,7 +2642,12 @@ function ICPOnboarding({ onDone }) {
       background:"var(--bg)", overflow:"hidden",
     }}>
       {/* Scrollable content */}
-      <div style={{flex:1, overflowY:"auto", padding:"52px 24px 0", WebkitOverflowScrolling:"touch"}}>
+      <div style={{
+        flex:1, overflowY:"auto", padding:"52px 24px 0", WebkitOverflowScrolling:"touch",
+        opacity: animating ? 0 : 1,
+        transform: animating ? "translateY(8px)" : "translateY(0)",
+        transition: "opacity .2s ease, transform .2s ease",
+      }}>
         {/* Progress bar */}
         <div style={{display:"flex", gap:6, marginBottom:32}}>
           {[1,2].map(s => (
@@ -2712,7 +2693,7 @@ function ICPOnboarding({ onDone }) {
       {/* Fixed bottom buttons */}
       <div style={{padding:"16px 24px 32px", background:"var(--bg)", borderTop:"0.5px solid var(--border)", flexShrink:0}}>
         {step === 1 && (
-          <button onClick={() => canContinue1 && setStep(2)} disabled={!canContinue1} style={{
+          <button onClick={() => canContinue1 && goToStep2()} disabled={!canContinue1} style={{
             width:"100%", padding:15,
             background: canContinue1 ? "var(--accent)" : "var(--bg3)",
             color: canContinue1 ? "#fff" : "var(--muted)",
@@ -2724,7 +2705,7 @@ function ICPOnboarding({ onDone }) {
         )}
         {step === 2 && (
           <div style={{display:"flex", gap:10}}>
-            <button onClick={() => setStep(1)} style={{
+            <button onClick={goToStep1} style={{
               flex:1, padding:15, background:"transparent", color:"var(--muted)",
               border:"0.5px solid var(--border)", borderRadius:"var(--r)", fontSize:14,
             }}>← Back</button>
